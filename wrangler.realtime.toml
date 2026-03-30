@@ -1,0 +1,14 @@
+name = "crossover-apparel-realtime"
+main = "workers/realtime-worker.ts"
+compatibility_date = "2026-03-25"
+
+[vars]
+REALTIME_API_TOKEN = "REPLACE_WITH_SECURE_TOKEN"
+
+[[durable_objects.bindings]]
+name = "REALTIME_HUB"
+class_name = "RealtimeHub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RealtimeHub"]

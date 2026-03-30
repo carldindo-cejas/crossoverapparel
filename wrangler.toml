@@ -1,0 +1,14 @@
+name = "crossover-apparel"
+account_id = "8e226d91f14776d424e51ec885e88f85"
+main = "worker-entrypoint.mjs"
+compatibility_date = "2026-03-25"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+REALTIME_API_URL = "https://crossover-apparel.cejascarldindo.workers.dev"
+REALTIME_API_TOKEN = "crossover_apparel_token"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "crossover-apparel-db"
+database_id = "57c71837-1e93-4bda-a412-987ef1856a45"
