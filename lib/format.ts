@@ -1,8 +1,9 @@
-export function formatCurrency(cents: number, currency = "USD") {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency
-  }).format(cents / 100);
+export function formatCurrency(cents: number, _currency = "PHP") {
+  const amount = (cents / 100).toLocaleString("en-PH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `₱${amount}`;
 }
 
 export function formatDate(value: string) {

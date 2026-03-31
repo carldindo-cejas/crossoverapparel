@@ -73,11 +73,18 @@ export default function OrderSummaryPage() {
               </div>
 
               <div className="space-y-1 text-sm text-neutral-700">
+                {order.items.map((item) => (
+                  <p key={`summary-${item.id}`}>
+                    {item.product_name_snapshot}: {item.quantity} player{item.quantity !== 1 ? "s" : ""} × {formatCurrency(item.unit_price_cents)} = {formatCurrency(item.line_total_cents)}
+                  </p>
+                ))}
+                <div className="my-2 border-t border-neutral-200" />
                 <p>Subtotal: {formatCurrency(order.subtotal_cents)}</p>
-                <p>Tax: {formatCurrency(order.tax_cents)}</p>
-                <p>Shipping: {formatCurrency(order.shipping_cents)}</p>
-                <p className="text-base font-semibold text-neutral-900">
-                  Total: {formatCurrency(order.total_cents)}
+                {order.tax_cents > 0 && <p>Tax: {formatCurrency(order.tax_cents)}</p>}
+                {order.shipping_cents > 0 && <p>Shipping: {formatCurrency(order.shipping_cents)}</p>}
+                {order.discount_cents > 0 && <p>Discount: -{formatCurrency(order.discount_cents)}</p>}
+                <p className="text-lg font-semibold text-neutral-900">
+                  Total Payable: {formatCurrency(order.total_cents)}
                 </p>
               </div>
 

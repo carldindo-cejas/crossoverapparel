@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { Product } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/format";
 
 type ProductCardProps = {
@@ -28,8 +29,8 @@ function StarRating({ rating }: { rating: number }) {
 export function ProductCard({ product }: ProductCardProps) {
   return (
     <motion.div whileHover={{ y: -4 }} transition={{ duration: 0.2 }}>
-      <Link href={`/custom-order?productId=${product.id}`}>
-        <Card className="overflow-hidden border-neutral-200 transition-shadow hover:shadow-xl hover:shadow-neutral-200/70">
+      <Card className="overflow-hidden border-neutral-200 transition-shadow hover:shadow-xl hover:shadow-neutral-200/70">
+        <Link href={`/product-order/${product.id}` as any}>
           <div className="relative aspect-[4/5] bg-neutral-100">
             {product.image_url ? (
               <img
@@ -43,21 +44,24 @@ export function ProductCard({ product }: ProductCardProps) {
               </div>
             )}
           </div>
-          <CardContent className="space-y-3">
-            <Badge>{product.category_name || "Apparel"}</Badge>
-            <div>
-              <h3 className="text-lg font-semibold text-neutral-900">{product.name}</h3>
-              <p className="text-sm text-neutral-500 line-clamp-2">
-                {product.description || "Performance fabrics and customization options available."}
-              </p>
-            </div>
-            <StarRating rating={product.rating ?? 0} />
-            <p className="text-base font-semibold text-neutral-900">
-              {formatCurrency(product.base_price_cents, product.currency)}
+        </Link>
+        <CardContent className="space-y-3">
+          <Badge>{product.category_name || "Apparel"}</Badge>
+          <div>
+            <h3 className="text-lg font-semibold text-neutral-900">{product.name}</h3>
+            <p className="text-sm text-neutral-500 line-clamp-2">
+              {product.description || "Performance fabrics and customization options available."}
             </p>
-          </CardContent>
-        </Card>
-      </Link>
+          </div>
+          <StarRating rating={product.rating ?? 0} />
+          <p className="text-base font-semibold text-neutral-900">
+            {formatCurrency(product.base_price_cents, product.currency)}
+          </p>
+          <Link href={`/product-order/${product.id}` as any}>
+            <Button size="sm" className="w-full">Order Now</Button>
+          </Link>
+        </CardContent>
+      </Card>
     </motion.div>
   );
 }

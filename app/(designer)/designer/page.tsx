@@ -37,6 +37,7 @@ const DESIGNER_STATUSES = [
 export default function DesignerOrdersPage() {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [statusUpdatingByOrder, setStatusUpdatingByOrder] = useState<Record<string, boolean>>({});
+  const [commission, setCommission] = useState<{ total_players: number; total_commission_cents: number } | null>(null);
 
   async function load() {
     const response = await fetch("/api/designer/orders", { cache: "no-store" });
@@ -46,8 +47,17 @@ export default function DesignerOrdersPage() {
     }
   }
 
+  async function loadCommission() {
+    const response = await fetch("/api/designer/commission", { cache: "no-store" });
+    const payload = (await response.json()) as ApiEnvelope<{ total_players: number; total_commission_cents: number }>;
+    if (response.ok && payload.success) {
+      setCommission(payload.data);
+    }
+  }
+
   useEffect(() => {
     load();
+    loadCommission();
   }, []);
 
   useRealtime({
@@ -55,6 +65,7 @@ export default function DesignerOrdersPage() {
     onEvent: (event) => {
       if (event.type === "order.status.updated") {
         load();
+        loadCommission();
       }
     }
   });
@@ -87,6 +98,7 @@ export default function DesignerOrdersPage() {
 
     setStatusUpdatingByOrder((prev) => ({ ...prev, [orderNumber]: false }));
     void load();
+    void loadCommission();
   }
 
   const grouped = useMemo(
@@ -97,6 +109,18 @@ export default function DesignerOrdersPage() {
     }),
     [orders]
   );
+
+  function statusColor(status: string): string {
+    switch (status) {
+      case "pending":      return "bg-yellow-100 text-yellow-800";
+      case "confirmed":    return "bg-blue-100 text-blue-800";
+      case "in_production": return "bg-orange-100 text-orange-800";
+      case "ready_to_ship": return "bg-purple-100 text-purple-800";
+      case "shipped":      return "bg-indigo-100 text-indigo-800";
+      case "delivered":    return "bg-green-100 text-green-800";
+      default:             return "bg-neutral-100 text-neutral-800";
+    }
+  }
 
   function OrderTable({ rows }: { rows: OrderRow[] }) {
     if (rows.length === 0) {
@@ -125,18 +149,23 @@ export default function DesignerOrdersPage() {
                   {formatCurrency(order.total_cents, order.currency)}
                 </td>
                 <td className="px-2 py-3">
-                  <select
-                    className="h-9 rounded-lg border border-neutral-300 px-2 text-sm"
-                    value={order.status}
-                    disabled={statusUpdatingByOrder[order.order_number] === true}
-                    onChange={(e) => updateOrderStatus(order.order_number, e.target.value)}
-                  >
-                    {DESIGNER_STATUSES.map((s) => (
-                      <option key={s} value={s}>
-                        {s.replace(/_/g, " ")}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex flex-col gap-1.5">
+                    <span className={`inline-flex w-fit items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${statusColor(order.status)}`}>
+                      {order.status.replace(/_/g, " ")}
+                    </span>
+                    <select
+                      className="h-9 rounded-lg border border-neutral-300 px-2 text-sm"
+                      value={order.status}
+                      disabled={statusUpdatingByOrder[order.order_number] === true}
+                      onChange={(e) => updateOrderStatus(order.order_number, e.target.value)}
+                    >
+                      {DESIGNER_STATUSES.map((s) => (
+                        <option key={s} value={s}>
+                          {s.replace(/_/g, " ")}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </td>
                 <td className="px-2 py-3">
                   <Link href={`/designer/orders/${order.order_number}` as Route}>
@@ -157,7 +186,7 @@ export default function DesignerOrdersPage() {
     <div className="space-y-6">
       <h2 className="text-3xl font-semibold text-neutral-900">Order List</h2>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader>
             <CardTitle>New</CardTitle>
@@ -180,6 +209,19 @@ export default function DesignerOrdersPage() {
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-semibold">{grouped.complete.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>My Commission</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-semibold text-green-600">
+              {commission ? formatCurrency(commission.total_commission_cents) : "—"}
+            </p>
+            <p className="text-xs text-neutral-500 mt-1">
+              {commission ? `${commission.total_players} players × ₱40.00` : "Loading..."}
+            </p>
           </CardContent>
         </Card>
       </div>

@@ -9,9 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { type Product, type Category } from "@/lib/types";
 import { useApi } from "@/hooks/use-api";
-import { formatCurrency } from "@/lib/format";
-
-const CATEGORY_ORDER = ["Jerseys", "Tshirts", "Poloshirts", "Warmers"];
+import { formatCurrency, formatDate } from "@/lib/format";
 
 function StarRating({ rating }: { rating: number }) {
   return (
@@ -29,7 +27,15 @@ function StarRating({ rating }: { rating: number }) {
   );
 }
 
-function ProductCarousel({ products }: { products: Product[] }) {
+type Testimonial = {
+  id: number;
+  rating: number;
+  review_text: string | null;
+  customer_name: string;
+  created_at: string;
+};
+
+function ProductCarousel({ products, showNewRibbon = false }: { products: Product[]; showNewRibbon?: boolean }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   function scroll(direction: "left" | "right") {
@@ -44,6 +50,11 @@ function ProductCarousel({ products }: { products: Product[] }) {
   if (products.length === 0) {
     return <p className="py-6 text-sm text-neutral-500">No products yet.</p>;
   }
+
+  // Determine newest product id for NEW ribbon
+  const newestId = showNewRibbon && products.length > 0
+    ? products[0].id // products are sorted by created_at DESC
+    : null;
 
   return (
     <div className="relative">
@@ -66,9 +77,14 @@ function ProductCarousel({ products }: { products: Product[] }) {
             whileHover={{ y: -4 }}
             className="w-56 flex-shrink-0"
           >
-            <Link href={`/custom-order?productId=${product.id}`}>
             <Card className="overflow-hidden border-neutral-200">
+              <Link href={`/product-order/${product.id}` as any}>
               <div className="relative aspect-[4/5] bg-neutral-100">
+                {product.id === newestId && (
+                  <span className="absolute left-0 top-3 z-10 rounded-r-full bg-red-500 px-3 py-1 text-xs font-bold uppercase text-white shadow-md">
+                    New
+                  </span>
+                )}
                 {product.image_url ? (
                   <img
                     src={`/api/products/images/${product.image_url}`}
@@ -81,6 +97,7 @@ function ProductCarousel({ products }: { products: Product[] }) {
                   </div>
                 )}
               </div>
+              </Link>
               <CardContent className="space-y-2 p-3">
                 <h3 className="truncate text-sm font-semibold text-neutral-900">
                   {product.name}
@@ -89,9 +106,11 @@ function ProductCarousel({ products }: { products: Product[] }) {
                 <p className="text-sm font-semibold text-neutral-900">
                   {formatCurrency(product.base_price_cents, product.currency)}
                 </p>
+                <Link href={`/product-order/${product.id}` as any}>
+                  <Button size="sm" className="mt-1 w-full">Order Now</Button>
+                </Link>
               </CardContent>
             </Card>
-            </Link>
           </motion.div>
         ))}
       </div>
@@ -110,6 +129,7 @@ function ProductCarousel({ products }: { products: Product[] }) {
 export default function HomePage() {
   const { data: products } = useApi<Product[]>("/api/products");
   const { data: categories } = useApi<Category[]>("/api/categories");
+  const { data: testimonials } = useApi<Testimonial[]>("/api/testimonials");
 
   const activeProducts = useMemo(
     () => (products || []).filter((p) => p.status === "active"),
@@ -118,23 +138,32 @@ export default function HomePage() {
 
   const featured = activeProducts.slice(0, 6);
 
+  // Find the banner product (is_banner=1) for the hero section
+  const bannerProduct = useMemo(
+    () => activeProducts.find((p) => p.is_banner === 1),
+    [activeProducts]
+  );
+
+  const bannerImageSrc = bannerProduct?.image_url
+    ? `/api/products/images/${bannerProduct.image_url}`
+    : "/images/banner/banner.jpg.png";
+
+  // Dynamic categories for explore collection — use all active categories
+  const categoryList = useMemo(() => {
+    const cats = (categories || []).filter((c) => c.is_active === 1);
+    return cats;
+  }, [categories]);
+
   const categoryProducts = useMemo(() => {
-    const catMap = new Map<string, Product[]>();
-    for (const name of CATEGORY_ORDER) {
-      const cat = (categories || []).find(
-        (c) => c.name.toLowerCase() === name.toLowerCase()
+    const catMap = new Map<number, Product[]>();
+    for (const cat of categoryList) {
+      catMap.set(
+        cat.id,
+        activeProducts.filter((p) => p.category_id === cat.id)
       );
-      if (cat) {
-        catMap.set(
-          name,
-          activeProducts.filter((p) => p.category_id === cat.id)
-        );
-      } else {
-        catMap.set(name, []);
-      }
     }
     return catMap;
-  }, [activeProducts, categories]);
+  }, [activeProducts, categoryList]);
 
   return (
     <AnimatedPage>
@@ -168,13 +197,21 @@ export default function HomePage() {
           transition={{ duration: 0.7 }}
           className="relative aspect-[4/5] overflow-hidden rounded-[2rem] border border-neutral-200"
         >
-          <Image
-            src="/images/banner/banner.jpg.png"
-            alt="Crossover Apparel Banner"
-            fill
-            className="object-cover"
-            priority
-          />
+          {bannerProduct?.image_url ? (
+            <img
+              src={bannerImageSrc}
+              alt={bannerProduct?.name || "Crossover Apparel Banner"}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <Image
+              src="/images/banner/banner.jpg.png"
+              alt="Crossover Apparel Banner"
+              fill
+              className="object-cover"
+              priority
+            />
+          )}
         </motion.div>
       </section>
 
@@ -196,7 +233,7 @@ export default function HomePage() {
             Newly uploaded products from our latest drops.
           </p>
         </motion.div>
-        <ProductCarousel products={featured} />
+        <ProductCarousel products={featured} showNewRibbon />
       </section>
 
       {/* Explore Collection */}
@@ -218,15 +255,61 @@ export default function HomePage() {
           </p>
         </motion.div>
 
-        {CATEGORY_ORDER.map((catName) => (
-          <div key={catName} className="mb-10">
+        {categoryList.map((cat) => (
+          <div key={cat.id} className="mb-10">
             <h3 className="mb-4 text-center text-xl font-semibold text-neutral-800">
-              {catName}
+              {cat.name}
             </h3>
-            <ProductCarousel products={categoryProducts.get(catName) || []} />
+            <ProductCarousel products={categoryProducts.get(cat.id) || []} />
           </div>
         ))}
       </section>
+
+      {/* Testimonials */}
+      {testimonials && testimonials.length > 0 && (
+        <section className="mx-auto w-full max-w-7xl px-6 py-14">
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="mb-8 text-center"
+          >
+            <p className="text-xs uppercase tracking-[0.2em] text-neutral-500">
+              Testimonials
+            </p>
+            <h2 className="mt-2 text-3xl font-semibold text-neutral-900">
+              What Our Customers Say
+            </h2>
+            <p className="mx-auto mt-2 max-w-xl text-neutral-600">
+              Ratings and reviews from our custom order customers.
+            </p>
+          </motion.div>
+
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {testimonials.map((t) => (
+              <motion.div
+                key={t.id}
+                initial={{ opacity: 0, y: 12 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+              >
+                <Card className="h-full border-neutral-200">
+                  <CardContent className="p-5 space-y-3">
+                    <StarRating rating={t.rating} />
+                    <p className="text-sm text-neutral-600 italic leading-relaxed">
+                      &ldquo;{t.review_text}&rdquo;
+                    </p>
+                    <div className="flex items-center justify-between pt-1">
+                      <p className="text-sm font-semibold text-neutral-900">{t.customer_name}</p>
+                      <p className="text-xs text-neutral-400">{formatDate(t.created_at)}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        </section>
+      )}
     </AnimatedPage>
   );
 }

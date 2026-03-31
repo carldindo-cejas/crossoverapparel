@@ -101,6 +101,18 @@ export default function AdminOrdersPage() {
     void load();
   }
 
+  function statusColor(status: string): string {
+    switch (status) {
+      case "pending":       return "bg-yellow-100 text-yellow-800";
+      case "confirmed":     return "bg-blue-100 text-blue-800";
+      case "in_production": return "bg-orange-100 text-orange-800";
+      case "ready_to_ship": return "bg-purple-100 text-purple-800";
+      case "shipped":       return "bg-indigo-100 text-indigo-800";
+      case "delivered":     return "bg-green-100 text-green-800";
+      default:              return "bg-neutral-100 text-neutral-800";
+    }
+  }
+
   async function updateStatus(orderId: string, status: string) {
     const previousStatus = orders.find((order) => order.id === orderId)?.status;
 
@@ -162,27 +174,30 @@ export default function AdminOrdersPage() {
                     {formatCurrency(order.total_cents, order.currency)}
                   </td>
                   <td className="px-2 py-3">
-                    <select
-                      className="h-9 rounded-lg border border-neutral-300 px-2"
-                      value={order.status}
-                      disabled={statusUpdatingByOrder[order.id] === true}
-                      onChange={(event) => updateStatus(order.id, event.target.value)}
-                    >
-                      {[
-                        "pending",
-                        "confirmed",
-                        "in_production",
-                        "ready_to_ship",
-                        "shipped",
-                        "delivered",
-                        "cancelled",
-                        "refunded"
-                      ].map((status) => (
-                        <option key={status} value={status}>
-                          {status}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex flex-col gap-1.5">
+                      <span className={`inline-flex w-fit items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${statusColor(order.status)}`}>
+                        {order.status.replace(/_/g, " ")}
+                      </span>
+                      <select
+                        className="h-9 rounded-lg border border-neutral-300 px-2"
+                        value={order.status}
+                        disabled={statusUpdatingByOrder[order.id] === true}
+                        onChange={(event) => updateStatus(order.id, event.target.value)}
+                      >
+                        {[
+                          "pending",
+                          "confirmed",
+                          "in_production",
+                          "ready_to_ship",
+                          "shipped",
+                          "delivered"
+                        ].map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </td>
                   <td className="px-2 py-3">
                     <div className="flex gap-2">
@@ -229,27 +244,71 @@ export default function AdminOrdersPage() {
       {selectedOrder ? (
         <Card>
           <CardHeader>
-            <CardTitle>Files for {selectedOrder.order_number}</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>Files for {selectedOrder.order_number}</CardTitle>
+              {selectedOrder.files.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    selectedOrder.files.forEach((f) => {
+                      const a = document.createElement("a");
+                      a.href = `/api/orders/files/${f.r2_key}`;
+                      a.download = f.file_name;
+                      a.click();
+                    });
+                  }}
+                >
+                  Download All
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {selectedOrder.files.length === 0 ? (
               <p className="text-sm text-neutral-600">No uploaded files.</p>
             ) : (
-              <ul className="space-y-2 text-sm">
-                {selectedOrder.files.map((file) => (
-                  <li key={file.id} className="flex items-center justify-between rounded-lg border border-neutral-200 p-3">
-                    <span>{file.file_name}</span>
-                    <a
-                      className="text-neutral-900 underline"
-                      href={`/api/orders/files/${file.r2_key}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open
-                    </a>
-                  </li>
-                ))}
-              </ul>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {selectedOrder.files.map((file) => {
+                  const isImage = file.mime_type.startsWith("image/");
+                  const labelMatch = file.file_name.match(/^\[(.+?)]\s*(.*)/);
+                  const label = labelMatch ? labelMatch[1] : null;
+                  const cleanName = labelMatch ? labelMatch[2] || file.file_name : file.file_name;
+                  return (
+                    <div key={file.id} className="overflow-hidden rounded-xl border border-neutral-200">
+                      {isImage ? (
+                        <img
+                          src={`/api/orders/files/${file.r2_key}`}
+                          alt={cleanName}
+                          className="h-48 w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-48 items-center justify-center bg-neutral-100 text-neutral-400">
+                          <span className="text-4xl">📄</span>
+                        </div>
+                      )}
+                      <div className="p-3">
+                        {label && (
+                          <span className="mb-1 inline-block rounded bg-neutral-100 px-2 py-0.5 text-xs font-semibold text-neutral-600">
+                            {label}
+                          </span>
+                        )}
+                        <p className="truncate text-sm font-medium text-neutral-900">{cleanName}</p>
+                        <p className="text-xs text-neutral-500">
+                          {(file.size_bytes / 1024).toFixed(1)} KB
+                        </p>
+                        <a
+                          href={`/api/orders/files/${file.r2_key}`}
+                          download={cleanName}
+                          className="mt-2 inline-block rounded-lg bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-700"
+                        >
+                          Download
+                        </a>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </CardContent>
         </Card>

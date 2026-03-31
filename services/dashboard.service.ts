@@ -13,7 +13,7 @@ export async function getAdminDashboardSummary(env: WorkerEnv) {
   }>(
     db,
     `SELECT
-       COALESCE(SUM(CASE WHEN payment_status IN ('paid', 'partial') THEN total_cents ELSE 0 END), 0) as total_sales_cents,
+       COALESCE(SUM(CASE WHEN status = 'delivered' THEN total_cents ELSE 0 END), 0) as total_sales_cents,
        COUNT(*) as total_orders,
        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_orders,
        SUM(CASE WHEN status IN ('confirmed', 'in_production', 'ready_to_ship', 'shipped') THEN 1 ELSE 0 END) as in_process_orders,

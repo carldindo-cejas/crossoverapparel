@@ -7,20 +7,16 @@ type RealtimeEvent = {
 };
 
 export async function publishRealtimeEvent(env: WorkerEnv, event: RealtimeEvent): Promise<void> {
-  if (!env.REALTIME_API_URL) {
-    return;
-  }
-
   try {
-    await fetch(`${env.REALTIME_API_URL.replace(/\/$/, "")}/publish`, {
+    // Broadcast through the PRESENCE_HUB Durable Object so all connected WebSocket clients receive it
+    const id = env.PRESENCE_HUB.idFromName("global-presence");
+    const stub = env.PRESENCE_HUB.get(id);
+    await stub.fetch("https://presence/broadcast", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(env.REALTIME_API_TOKEN ? { Authorization: `Bearer ${env.REALTIME_API_TOKEN}` } : {})
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(event)
     });
   } catch {
-    // Keep business logic non-blocking if realtime network fails.
+    // Keep business logic non-blocking if realtime broadcast fails.
   }
 }

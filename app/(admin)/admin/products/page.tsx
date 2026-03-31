@@ -9,6 +9,16 @@ import { Badge } from "@/components/ui/badge";
 import { type ApiEnvelope, type Category, type Product } from "@/lib/types";
 import { formatCurrency } from "@/lib/format";
 
+// Auto-price mapping: category name → centavos
+function categoryPriceCents(categoryName: string): number | null {
+  const lower = categoryName.toLowerCase();
+  if (lower.includes("jersey") || lower.includes("sando")) return 34900;
+  if (lower.includes("tshirt") || lower.includes("t-shirt")) return 39900;
+  if (lower.includes("polo")) return 44900;
+  if (lower.includes("warmer")) return 54900;
+  return null;
+}
+
 export default function AdminProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -72,7 +82,7 @@ export default function AdminProductsPage() {
           basePriceCents: Number(form.basePriceCents),
           categoryId: form.categoryId ? Number(form.categoryId) : undefined,
           status: form.status,
-          currency: "USD",
+          currency: "PHP",
           isBanner: form.isBanner
         })
       });
@@ -143,8 +153,8 @@ export default function AdminProductsPage() {
     const file = e.target.files?.[0];
     if (!file || !uploadingId) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      alert("File must be under 5MB");
+    if (file.size > 2 * 1024 * 1024) {
+      alert("File must be under 2MB");
       return;
     }
 
@@ -179,14 +189,19 @@ export default function AdminProductsPage() {
               <Input placeholder="e.g. Classic Jersey" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value, slug: autoSlug(e.target.value) }))} />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-neutral-500">Price (cents)</label>
+              <label className="text-xs font-medium text-neutral-500">Price (centavos)</label>
               <Input type="number" placeholder="e.g. 2500" value={form.basePriceCents} onChange={(e) => setForm((p) => ({ ...p, basePriceCents: e.target.value }))} />
             </div>
           </div>
           <div className="grid gap-3 md:grid-cols-3">
             <div className="space-y-1">
               <label className="text-xs font-medium text-neutral-500">Category</label>
-              <select className="h-10 w-full rounded-xl border border-neutral-300 px-3" value={form.categoryId} onChange={(e) => setForm((p) => ({ ...p, categoryId: e.target.value }))}>
+              <select className="h-10 w-full rounded-xl border border-neutral-300 px-3" value={form.categoryId} onChange={(e) => {
+                const catId = e.target.value;
+                const cat = categories.find((c) => String(c.id) === catId);
+                const autoPrice = cat ? categoryPriceCents(cat.name) : null;
+                setForm((p) => ({ ...p, categoryId: catId, ...(autoPrice !== null ? { basePriceCents: String(autoPrice) } : {}) }));
+              }}>
                 <option value="">Select category</option>
                 {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
@@ -233,12 +248,17 @@ export default function AdminProductsPage() {
                 <Input value={editForm.name} onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))} />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-neutral-500">Price (cents)</label>
+                <label className="text-xs font-medium text-neutral-500">Price (centavos)</label>
                 <Input type="number" value={editForm.basePriceCents} onChange={(e) => setEditForm((p) => ({ ...p, basePriceCents: e.target.value }))} />
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-medium text-neutral-500">Category</label>
-                <select className="h-10 w-full rounded-xl border border-neutral-300 px-3" value={editForm.categoryId} onChange={(e) => setEditForm((p) => ({ ...p, categoryId: e.target.value }))}>
+                <select className="h-10 w-full rounded-xl border border-neutral-300 px-3" value={editForm.categoryId} onChange={(e) => {
+                  const catId = e.target.value;
+                  const cat = categories.find((c) => String(c.id) === catId);
+                  const autoPrice = cat ? categoryPriceCents(cat.name) : null;
+                  setEditForm((p) => ({ ...p, categoryId: catId, ...(autoPrice !== null ? { basePriceCents: String(autoPrice) } : {}) }));
+                }}>
                   <option value="">No category</option>
                   {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
@@ -287,7 +307,7 @@ export default function AdminProductsPage() {
             </thead>
             <tbody>
               {products.map((product) => (
-                <tr key={product.id} className="border-t border-neutral-200">
+                <tr key={product.id} className={`border-t border-neutral-200 ${(product as Product & { is_banner?: number }).is_banner === 1 ? "bg-amber-50" : ""}`}>
                   <td className="px-2 py-3">
                     {product.image_url ? (
                       <img src={`/api/products/images/${product.image_url}`} alt="" className="h-14 w-14 rounded-lg object-cover" />

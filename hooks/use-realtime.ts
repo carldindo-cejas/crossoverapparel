@@ -15,42 +15,82 @@ export function useRealtime({ role, userId, onEvent }: UseRealtimeOptions) {
   useEffect(() => {
     let socket: WebSocket | null = null;
     let cancelled = false;
+    let retryCount = 0;
+    let retryTimeout: ReturnType<typeof setTimeout>;
+    let heartbeatInterval: ReturnType<typeof setInterval>;
 
     async function connect() {
-      const response = await fetch("/api/realtime/config", { cache: "no-store" });
-      const payload = (await response.json()) as {
-        success: boolean;
-        data?: { wsUrl?: string };
-      };
+      if (cancelled) return;
 
-      const wsBase = payload.success ? payload.data?.wsUrl || "" : "";
+      try {
+        const response = await fetch("/api/realtime/config", { cache: "no-store" });
+        const payload = (await response.json()) as {
+          success: boolean;
+          data?: { wsUrl?: string };
+        };
 
-      if (!wsBase || cancelled) return;
+        const wsBase = payload.success ? payload.data?.wsUrl || "" : "";
+        if (!wsBase || cancelled) return;
 
-      const url = new URL(wsBase);
-      url.searchParams.set("role", role);
-      if (userId) url.searchParams.set("userId", userId);
+        const url = new URL(wsBase);
+        url.searchParams.set("role", role);
+        if (userId) url.searchParams.set("userId", userId);
 
-      socket = new WebSocket(url.toString());
+        socket = new WebSocket(url.toString());
 
-      socket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(String(event.data)) as {
-            type: string;
-            userId?: string;
-            payload: Record<string, unknown>;
-          };
-          onEventRef.current(data);
-        } catch {
-          // ignore malformed events
+        socket.onopen = () => {
+          retryCount = 0;
+          // Send heartbeat every 30s to keep connection alive
+          heartbeatInterval = setInterval(() => {
+            if (socket?.readyState === WebSocket.OPEN) {
+              socket.send("ping");
+            }
+          }, 30000);
+        };
+
+        socket.onmessage = (event) => {
+          try {
+            const text = String(event.data);
+            if (text === "pong") return;
+            const data = JSON.parse(text) as {
+              type: string;
+              userId?: string;
+              payload: Record<string, unknown>;
+            };
+            if (data.type === "pong") return;
+            onEventRef.current(data);
+          } catch {
+            // ignore malformed events
+          }
+        };
+
+        socket.onclose = () => {
+          clearInterval(heartbeatInterval);
+          if (!cancelled) {
+            const delay = Math.min(1000 * 2 ** retryCount, 30000);
+            retryCount++;
+            retryTimeout = setTimeout(connect, delay);
+          }
+        };
+
+        socket.onerror = () => {
+          socket?.close();
+        };
+      } catch {
+        if (!cancelled) {
+          const delay = Math.min(1000 * 2 ** retryCount, 30000);
+          retryCount++;
+          retryTimeout = setTimeout(connect, delay);
         }
-      };
+      }
     }
 
     connect();
 
     return () => {
       cancelled = true;
+      clearTimeout(retryTimeout);
+      clearInterval(heartbeatInterval);
       if (socket && socket.readyState === WebSocket.OPEN) {
         socket.close();
       }

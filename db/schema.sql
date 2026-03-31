@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS products (
   slug TEXT NOT NULL UNIQUE,
   description TEXT,
   base_price_cents INTEGER NOT NULL CHECK (base_price_cents >= 0),
-  currency TEXT NOT NULL DEFAULT 'USD' CHECK (length(currency) = 3),
+  currency TEXT NOT NULL DEFAULT 'PHP' CHECK (length(currency) = 3),
   status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'active', 'archived')),
   is_banner INTEGER NOT NULL DEFAULT 0 CHECK (is_banner IN (0, 1)),
   created_by TEXT,
@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS orders (
   shipping_cents INTEGER NOT NULL DEFAULT 0 CHECK (shipping_cents >= 0),
   discount_cents INTEGER NOT NULL DEFAULT 0 CHECK (discount_cents >= 0),
   total_cents INTEGER NOT NULL CHECK (total_cents >= 0),
-  currency TEXT NOT NULL DEFAULT 'USD' CHECK (length(currency) = 3),
+  currency TEXT NOT NULL DEFAULT 'PHP' CHECK (length(currency) = 3),
   placed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   fulfilled_at TEXT,
   cancelled_at TEXT,
@@ -221,7 +221,7 @@ CREATE TABLE IF NOT EXISTS payments (
   provider TEXT NOT NULL CHECK (provider IN ('stripe', 'paypal', 'bank_transfer', 'cash', 'other')),
   provider_txn_id TEXT UNIQUE,
   amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
-  currency TEXT NOT NULL DEFAULT 'USD' CHECK (length(currency) = 3),
+  currency TEXT NOT NULL DEFAULT 'PHP' CHECK (length(currency) = 3),
   status TEXT NOT NULL CHECK (status IN ('pending', 'authorized', 'captured', 'failed', 'refunded', 'partially_refunded')),
   paid_at TEXT,
   metadata_json TEXT,
@@ -247,3 +247,29 @@ CREATE TABLE IF NOT EXISTS receipts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_receipts_order_issued ON receipts(order_id, issued_at DESC);
+
+CREATE TABLE IF NOT EXISTS payment_methods (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  is_available INTEGER NOT NULL DEFAULT 1 CHECK (is_available IN (0, 1)),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT OR IGNORE INTO payment_methods (name, is_available) VALUES
+  ('Cash on Delivery', 1),
+  ('Instapay', 0),
+  ('Bank Transfer', 0);
+
+CREATE TABLE IF NOT EXISTS ratings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id TEXT NOT NULL UNIQUE,
+  customer_name TEXT NOT NULL,
+  rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  review_text TEXT,
+  is_custom_order INTEGER NOT NULL DEFAULT 0 CHECK (is_custom_order IN (0, 1)),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (order_id) REFERENCES orders(id) ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_ratings_custom_order ON ratings(is_custom_order, created_at DESC);

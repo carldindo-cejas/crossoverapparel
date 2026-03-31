@@ -14,6 +14,10 @@ export default function AdminStaffPage() {
   const [form, setForm] = useState({ fullName: "", email: "", password: "" });
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  const [passwordModal, setPasswordModal] = useState<{ id: string; name: string } | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordMsg, setPasswordMsg] = useState("");
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/staff", { cache: "no-store" });
@@ -66,6 +70,32 @@ export default function AdminStaffPage() {
       body: JSON.stringify({ isActive: record.is_active !== 1 })
     });
     await load();
+  }
+
+  async function changePassword() {
+    if (!passwordModal || newPassword.length < 8) return;
+    setChangingPassword(true);
+    setPasswordMsg("");
+    try {
+      const res = await fetch(`/api/admin/staff/${passwordModal.id}/password`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: newPassword }),
+      });
+      const payload = (await res.json()) as { success: boolean; error?: { message: string } };
+      if (!res.ok || !payload.success) {
+        setPasswordMsg(payload.error?.message || "Failed to change password");
+      } else {
+        setPasswordMsg("Password changed successfully!");
+        setTimeout(() => {
+          setPasswordModal(null);
+          setNewPassword("");
+          setPasswordMsg("");
+        }, 1500);
+      }
+    } finally {
+      setChangingPassword(false);
+    }
   }
 
   function presenceBadge(status: string | null) {
@@ -147,9 +177,22 @@ export default function AdminStaffPage() {
                     </Badge>
                   </td>
                   <td className="px-2 py-3">
-                    <Button size="sm" variant="outline" onClick={() => toggleActive(record)}>
-                      {record.is_active === 1 ? "Deactivate" : "Activate"}
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => toggleActive(record)}>
+                        {record.is_active === 1 ? "Deactivate" : "Activate"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setPasswordModal({ id: record.id, name: record.full_name });
+                          setNewPassword("");
+                          setPasswordMsg("");
+                        }}
+                      >
+                        Change Password
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -160,6 +203,38 @@ export default function AdminStaffPage() {
           </table>
         </CardContent>
       </Card>
+
+      {/* Change Password Modal */}
+      {passwordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-neutral-900">
+              Change Password for {passwordModal.name}
+            </h3>
+            <p className="mt-1 text-sm text-neutral-500">Enter a new password (min 8 characters).</p>
+            {passwordMsg && (
+              <p className={`mt-3 text-sm ${passwordMsg.includes("success") ? "text-green-600" : "text-red-600"}`}>
+                {passwordMsg}
+              </p>
+            )}
+            <Input
+              className="mt-4"
+              type="password"
+              placeholder="New password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setPasswordModal(null)}>
+                Cancel
+              </Button>
+              <Button onClick={changePassword} disabled={changingPassword || newPassword.length < 8}>
+                {changingPassword ? "Saving..." : "Save Password"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

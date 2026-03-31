@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   typedRoutes: true,
+  output: "standalone",
   async rewrites() {
     return [
       // /owner/* → /admin/* (admin pages serve under /admin route group)

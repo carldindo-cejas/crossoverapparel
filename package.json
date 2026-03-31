@@ -6,7 +6,7 @@
         "dev": "next dev",
         "build": "next build",
         "preview": "opennextjs-cloudflare build && wrangler dev",
-        "deploy": "opennextjs-cloudflare build && wrangler deploy"
+        "deploy": "next build && opennextjs-cloudflare build --skipNextBuild && wrangler deploy worker-entrypoint.mjs --config wrangler.toml --experimental-autoconfig=false"
     },
     "dependencies": {
         "@radix-ui/react-slot": "^1.1.0",

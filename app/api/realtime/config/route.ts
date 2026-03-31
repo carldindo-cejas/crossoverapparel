@@ -1,13 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
-  const fallbackProtocol = process.env.NODE_ENV === "development" ? "ws" : "wss";
-  const fallbackHost = process.env.NEXT_PUBLIC_APP_HOST || "localhost:3000";
+export async function GET(request: NextRequest) {
+  const host = request.headers.get("host") || "localhost:3000";
+  const proto = request.headers.get("x-forwarded-proto") || "https";
+  const wsProto = proto === "https" ? "wss" : "ws";
 
   return NextResponse.json({
     success: true,
     data: {
-      wsUrl: process.env.NEXT_PUBLIC_REALTIME_WS_URL || `${fallbackProtocol}://${fallbackHost}/api/presence`
+      wsUrl: `${wsProto}://${host}/api/presence`
     }
   });
 }

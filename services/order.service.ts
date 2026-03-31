@@ -225,6 +225,23 @@ export async function createOrder(env: WorkerEnv, rawBody: unknown) {
     [orderId, "Order created"]
   );
 
+  await publishRealtimeEvent(env, {
+    type: "order.created",
+    payload: {
+      orderId,
+      orderNumber,
+      totalCents,
+    }
+  });
+
+  await publishRealtimeEvent(env, {
+    type: "dashboard.updated",
+    payload: {
+      source: "order-created",
+      orderId,
+    }
+  });
+
   return {
     orderId,
     orderNumber,
@@ -369,11 +386,18 @@ export async function assignDesigner(
     [orderId, body.designerUserId, assignedBy, body.dueAt ?? null, body.notes ?? null]
   );
 
+  const assignedOrder = await sqlFirst<{ order_number: string }>(
+    db,
+    "SELECT order_number FROM orders WHERE id = ? LIMIT 1",
+    [orderId]
+  );
+
   await publishRealtimeEvent(env, {
     type: "assignment.updated",
     userId: body.designerUserId,
     payload: {
       orderId,
+      orderNumber: assignedOrder?.order_number ?? "",
       designerUserId: body.designerUserId,
       assignedBy
     }
@@ -407,6 +431,17 @@ export async function updateOrderStatus(
     [body.status, orderId]
   );
 
+  // Auto-complete designer assignments when order is delivered
+  if (body.status === "delivered") {
+    await sqlRun(
+      db,
+      `UPDATE designer_assignments
+       SET status = 'completed', completed_at = CURRENT_TIMESTAMP
+       WHERE order_id = ? AND status != 'completed'`,
+      [orderId]
+    );
+  }
+
   await sqlRun(
     db,
     `INSERT INTO order_status_logs (order_id, previous_status, new_status, changed_by, reason)
@@ -414,13 +449,18 @@ export async function updateOrderStatus(
     [orderId, current.status, body.status, changedBy, body.reason ?? null]
   );
 
+  const changedByUser = await sqlFirst<{ role: string; full_name: string }>(db, "SELECT role, full_name FROM users WHERE id = ? LIMIT 1", [changedBy]);
+
   await publishRealtimeEvent(env, {
     type: "order.status.updated",
     payload: {
       orderId,
+      orderNumber: (await sqlFirst<{ order_number: string }>(db, "SELECT order_number FROM orders WHERE id = ? LIMIT 1", [orderId]))?.order_number ?? "",
       previousStatus: current.status,
       newStatus: body.status,
-      changedBy
+      changedBy,
+      changedByRole: changedByUser?.role ?? "unknown",
+      changedByName: changedByUser?.full_name ?? "Unknown"
     }
   });
 

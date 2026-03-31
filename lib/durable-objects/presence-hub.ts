@@ -226,12 +226,20 @@ export class PresenceHub extends DurableObject {
   }
 
   private async broadcastMessage(request: Request) {
-    const body = (await request.json()) as PresenceMessage;
+    const body = (await request.json()) as PresenceMessage & { userId?: string };
     if (!body.type) {
       return json({ success: false, error: { message: "type is required" } }, 400);
     }
 
-    this.broadcast(body);
+    // Route events to the right audience
+    if (body.type === "order.created" || body.type === "dashboard.updated") {
+      this.broadcastToRole(body, "owner");
+    } else if (body.type === "assignment.updated" && body.userId) {
+      this.broadcastToUser(body, body.userId);
+    } else {
+      this.broadcast(body);
+    }
+
     return json({ success: true });
   }
 
@@ -245,6 +253,24 @@ export class PresenceHub extends DurableObject {
     const encoded = JSON.stringify(message);
     for (const socket of this.sessions.keys()) {
       if (socket.readyState === 1) {
+        socket.send(encoded);
+      }
+    }
+  }
+
+  private broadcastToRole(message: PresenceMessage, role: PresenceRole) {
+    const encoded = JSON.stringify(message);
+    for (const [socket, session] of this.sessions.entries()) {
+      if (socket.readyState === 1 && session.role === role) {
+        socket.send(encoded);
+      }
+    }
+  }
+
+  private broadcastToUser(message: PresenceMessage, targetUserId: string) {
+    const encoded = JSON.stringify(message);
+    for (const [socket, session] of this.sessions.entries()) {
+      if (socket.readyState === 1 && session.userId === targetUserId) {
         socket.send(encoded);
       }
     }

@@ -10,7 +10,7 @@ const createProductSchema = z.object({
   slug: z.string().min(1),
   description: z.string().optional(),
   basePriceCents: z.number().int().min(0),
-  currency: z.string().length(3).default("USD"),
+  currency: z.string().length(3).default("PHP"),
   status: z.enum(["draft", "active", "archived"]).default("draft"),
   isBanner: z.boolean().default(false)
 });
@@ -26,6 +26,26 @@ const updateProductSchema = z.object({
   status: z.enum(["draft", "active", "archived"]).optional(),
   isBanner: z.boolean().optional()
 });
+
+// Fixed pricing per product type (in centavos)
+export const FIXED_PRICES: Record<string, number> = {
+  jersey: 34900,
+  jerseys: 34900,
+  sando: 34900,
+  tshirt: 39900,
+  tshirts: 39900,
+  "t-shirt": 39900,
+  poloshirt: 44900,
+  poloshirts: 44900,
+  "polo shirts": 44900,
+  warmer: 54900,
+  warmers: 54900,
+};
+
+export function getFixedPriceByCategoryName(categoryName: string | null): number | null {
+  if (!categoryName) return null;
+  return FIXED_PRICES[categoryName.toLowerCase()] ?? null;
+}
 
 export async function createProduct(env: WorkerEnv, createdBy: string, rawBody: unknown) {
   const body = createProductSchema.parse(rawBody);
@@ -114,10 +134,19 @@ export async function getProducts(env: WorkerEnv) {
     `SELECT p.id, p.sku, p.name, p.slug, p.description, p.base_price_cents, p.currency, p.status, p.created_at,
             p.is_banner,
             c.id as category_id, c.name as category_name,
-            pi.r2_key as image_url
+            pi.r2_key as image_url,
+            COALESCE(pr.avg_rating, 0) as rating
      FROM products p
      LEFT JOIN categories c ON c.id = p.category_id
      LEFT JOIN product_images pi ON pi.product_id = p.id AND pi.is_primary = 1
+     LEFT JOIN (
+       SELECT oi.product_id, ROUND(AVG(r.rating), 1) as avg_rating
+       FROM ratings r
+       INNER JOIN orders o ON o.id = r.order_id
+       INNER JOIN order_items oi ON oi.order_id = o.id
+       WHERE oi.product_id IS NOT NULL
+       GROUP BY oi.product_id
+     ) pr ON pr.product_id = p.id
      ORDER BY p.created_at DESC`
   );
 }

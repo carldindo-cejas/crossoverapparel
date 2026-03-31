@@ -241,82 +241,84 @@ export default function DesignerOrderDetailsPage() {
         </CardContent>
       </Card>
 
-      {/* Photo Attachments */}
-      {imageFiles.length > 0 && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Photo Attachments ({imageFiles.length})</CardTitle>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  imageFiles.forEach((f) => {
-                    const a = document.createElement("a");
-                    a.href = `/api/orders/files/${f.r2_key}`;
-                    a.download = f.file_name;
-                    a.click();
-                  });
-                }}
-              >
-                Download All
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {imageFiles.map((file) => (
-                <div key={file.id} className="group relative overflow-hidden rounded-xl border border-neutral-200">
-                  <img
-                    src={`/api/orders/files/${file.r2_key}`}
-                    alt={file.file_name}
-                    className="h-48 w-full object-cover"
-                  />
-                  <div className="p-3">
-                    <p className="truncate text-sm font-medium text-neutral-900">{file.file_name}</p>
-                    <p className="text-xs text-neutral-500">{formatBytes(file.size_bytes)}</p>
-                    <a
-                      href={`/api/orders/files/${file.r2_key}`}
-                      download={file.file_name}
-                      className="mt-2 inline-block rounded-lg bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-700"
-                    >
-                      Download
-                    </a>
+      {/* Customer Attachments — grouped by label */}
+      {order.files.length > 0 ? (() => {
+        const LABEL_ORDER = ["Product Photo", "Logo Left", "Logo Right", "Logo Back"];
+        function parseLabel(fileName: string): { label: string; cleanName: string } {
+          const m = fileName.match(/^\[(.+?)]\s*(.*)/);
+          return m ? { label: m[1], cleanName: m[2] || fileName } : { label: "", cleanName: fileName };
+        }
+        const labeled = order.files.map((f) => ({ ...f, ...parseLabel(f.file_name) }));
+        const grouped: Record<string, typeof labeled> = {};
+        for (const f of labeled) {
+          const key = f.label || "Other Files";
+          (grouped[key] ??= []).push(f);
+        }
+        const sortedKeys = [
+          ...LABEL_ORDER.filter((k) => grouped[k]),
+          ...Object.keys(grouped).filter((k) => !LABEL_ORDER.includes(k))
+        ];
+        return (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Customer Attachments ({order.files.length})</CardTitle>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    order.files.forEach((f) => {
+                      const a = document.createElement("a");
+                      a.href = `/api/orders/files/${f.r2_key}`;
+                      a.download = f.file_name;
+                      a.click();
+                    });
+                  }}
+                >
+                  Download All
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {sortedKeys.map((label) => (
+                <div key={label}>
+                  <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-neutral-500">{label}</h3>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {grouped[label].map((file) => (
+                      <div key={file.id} className="overflow-hidden rounded-xl border border-neutral-200">
+                        {isImageFile(file.mime_type) ? (
+                          <img
+                            src={`/api/orders/files/${file.r2_key}`}
+                            alt={file.cleanName}
+                            className="h-56 w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-56 items-center justify-center bg-neutral-100 text-neutral-400">
+                            <span className="text-4xl">📄</span>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between p-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-neutral-900">{file.cleanName}</p>
+                            <p className="text-xs text-neutral-500">{formatBytes(file.size_bytes)}</p>
+                          </div>
+                          <a
+                            href={`/api/orders/files/${file.r2_key}`}
+                            download={file.cleanName}
+                            className="ml-3 shrink-0 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs text-white hover:bg-neutral-700"
+                          >
+                            Download
+                          </a>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Other Files */}
-      {otherFiles.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Other Files ({otherFiles.length})</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {otherFiles.map((file) => (
-              <div key={file.id} className="flex items-center justify-between rounded-xl border border-neutral-200 p-3 text-sm">
-                <div>
-                  <p className="font-medium text-neutral-900">{file.file_name}</p>
-                  <p className="text-neutral-500">{formatBytes(file.size_bytes)} &middot; {formatDate(file.created_at)}</p>
-                </div>
-                <a
-                  href={`/api/orders/files/${file.r2_key}`}
-                  download={file.file_name}
-                  className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs text-white hover:bg-neutral-700"
-                >
-                  Download
-                </a>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {order.files.length === 0 && (
+            </CardContent>
+          </Card>
+        );
+      })() : (
         <Card>
           <CardHeader><CardTitle>Files</CardTitle></CardHeader>
           <CardContent><p className="text-sm text-neutral-500">No files attached to this order.</p></CardContent>

@@ -26,6 +26,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="icon" href="/images/crossoverapparel.png.png" type="image/png" />
+      </head>
       <body className={`${displayFont.variable} ${bodyFont.variable} antialiased`}>{children}</body>
     </html>
   );

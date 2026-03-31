@@ -11,16 +11,32 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { type ApiEnvelope, type Product, type Category } from "@/lib/types";
 import { useApi } from "@/hooks/use-api";
+import { formatCurrency } from "@/lib/format";
 
-const PRODUCT_TYPES = ["Sando", "Tshirt", "Poloshirt", "Warmer"] as const;
+const PRODUCT_TYPES = ["Jersey", "Tshirt", "Poloshirt", "Warmer"] as const;
+
+// Fixed pricing per product type (in centavos)
+const PRICE_MAP: Record<string, number> = {
+  Jersey: 34900,
+  Tshirt: 39900,
+  Poloshirt: 44900,
+  Warmer: 54900,
+};
+
+type PaymentMethod = {
+  id: number;
+  name: string;
+  is_available: number;
+};
 
 type OrderSummary = {
   orderNumber: string;
   status: string;
   customerName: string;
   phone: string;
-  address: string;
+  mapLocation: string;
   teamName: string;
+  productType: string;
   cuttingFront: string;
   cuttingBack: string;
   cuttingBelow: string;
@@ -28,6 +44,8 @@ type OrderSummary = {
   deadline: string;
   players: { size: string; number: string; surname: string }[];
   instructions: string;
+  unitPriceCents: number;
+  totalCents: number;
 };
 
 const SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL"] as const;
@@ -42,9 +60,7 @@ type Player = {
 type FormState = {
   name: string;
   phone: string;
-  address: string;
   productId: string;
-  quantity: string;
   productType: string;
   teamName: string;
   cuttingFront: string;
@@ -61,9 +77,7 @@ type FormState = {
 const initialForm: FormState = {
   name: "",
   phone: "",
-  address: "",
   productId: "",
-  quantity: "1",
   productType: "",
   teamName: "",
   cuttingFront: "Round Neck",
@@ -77,10 +91,12 @@ const initialForm: FormState = {
   mapLng: "",
 };
 
-function fileErr(file: File | null, maxKB: number): string | null {
+const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024; // 2MB
+
+function fileErr(file: File | null): string | null {
   if (!file) return null;
-  if (file.size > maxKB * 1024)
-    return `File exceeds ${maxKB}KB limit (${(file.size / 1024).toFixed(0)}KB)`;
+  if (file.size > MAX_FILE_SIZE_BYTES)
+    return `File exceeds 2MB limit (${(file.size / (1024 * 1024)).toFixed(1)}MB)`;
   return null;
 }
 
@@ -96,6 +112,7 @@ function CustomOrderContent() {
   const searchParams = useSearchParams();
   const { data: products } = useApi<Product[]>("/api/products");
   const { data: categories } = useApi<Category[]>("/api/categories");
+  const { data: paymentMethods } = useApi<PaymentMethod[]>("/api/payment-methods");
   const [form, setForm] = useState<FormState>(initialForm);
   const [fromCollection, setFromCollection] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -119,7 +136,7 @@ function CustomOrderContent() {
   function categoryToProductType(categoryName: string | null | undefined): string {
     if (!categoryName) return "";
     const lower = categoryName.toLowerCase();
-    if (lower.includes("jersey") || lower.includes("sando")) return "Sando";
+    if (lower.includes("jersey") || lower.includes("sando")) return "Jersey";
     if (lower.includes("tshirt") || lower.includes("t-shirt")) return "Tshirt";
     if (lower.includes("polo")) return "Poloshirt";
     if (lower.includes("warmer")) return "Warmer";
@@ -137,7 +154,6 @@ function CustomOrderContent() {
         setForm((prev) => ({
           ...prev,
           productId: String(product.id),
-          quantity: String(Math.max(Number(prev.quantity), 1)),
           productType: autoType || prev.productType,
         }));
         setFromCollection(true);
@@ -190,18 +206,27 @@ function CustomOrderContent() {
     );
   }, [players]);
 
+  // Computed pricing
+  const unitPriceCents = PRICE_MAP[form.productType] || 0;
+  const totalPlayers = players.length;
+  const totalCents = unitPriceCents * totalPlayers;
+
   function validate(): string | null {
     if (!form.name.trim()) return "Name is required";
     if (!form.phone.trim()) return "Phone is required";
-    if (!form.address.trim()) return "Address is required";
+    if (!form.mapLat.trim() || !form.mapLng.trim()) return "Map pin location is required";
     if (!form.productType) return "Product type is required";
     if (!form.teamName.trim()) return "Team name is required";
     if (!form.deadlineDate) return "Deadline date is required";
     if (!form.deadlineTime) return "Deadline time is required";
-    if (fileErr(photoFile, 500)) return fileErr(photoFile, 500)!;
-    if (fileErr(leftLogo, 200)) return `Left logo: ${fileErr(leftLogo, 200)}`;
-    if (fileErr(rightLogo, 200)) return `Right logo: ${fileErr(rightLogo, 200)}`;
-    if (fileErr(backLogo, 200)) return `Back logo: ${fileErr(backLogo, 200)}`;
+    const _minDeadline = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    _minDeadline.setHours(0, 0, 0, 0);
+    if (new Date(form.deadlineDate + "T00:00:00") < _minDeadline) return "Deadline must be at least 7 days from today";
+    if (form.deadlineTime < "08:00" || form.deadlineTime > "17:00") return "Deadline time must be between 8:00 AM and 5:00 PM";
+    if (fileErr(photoFile)) return fileErr(photoFile)!;
+    if (fileErr(leftLogo)) return `Left logo: ${fileErr(leftLogo)}`;
+    if (fileErr(rightLogo)) return `Right logo: ${fileErr(rightLogo)}`;
+    if (fileErr(backLogo)) return `Back logo: ${fileErr(backLogo)}`;
     for (const p of players) {
       if (!p.surname.trim()) return "Each player needs a surname";
       if (!p.number.trim()) return "Each player needs a number";
@@ -233,10 +258,7 @@ function CustomOrderContent() {
 
       const deadline = `${form.deadlineDate}T${form.deadlineTime}`;
 
-      const locationValue =
-        form.mapLat && form.mapLng
-          ? `${form.mapLat},${form.mapLng}`
-          : form.address;
+      const locationValue = `${form.mapLat},${form.mapLng}`;
 
       const activeProds = (products || []).filter((p) => p.status === "active");
       const selectedProductId = form.productId
@@ -250,13 +272,13 @@ function CustomOrderContent() {
           lastName,
           email: `${form.phone.replace(/[^0-9]/g, "")}@guest.crossover.local`,
           phone: form.phone,
-          shippingAddress: { fullAddress: form.address, lat: form.mapLat, lng: form.mapLng },
-          billingAddress: { fullAddress: form.address },
+          shippingAddress: { fullAddress: locationValue, lat: form.mapLat, lng: form.mapLng },
+          billingAddress: { fullAddress: locationValue },
         },
         items: [
           {
             productId: selectedProductId,
-            quantity: Math.max(Number(form.quantity) || 1, 1),
+            quantity: totalPlayers,
             customizations: [
               { customizationType: "text", fieldName: "teamName", fieldValue: form.teamName, additionalCostCents: 0 },
               { customizationType: "text", fieldName: "productType", fieldValue: form.productType, additionalCostCents: 0 },
@@ -295,16 +317,23 @@ function CustomOrderContent() {
       const orderId = orderResult.data.orderId;
       const createdOrderNumber = orderResult.data.orderNumber;
 
-      // Upload all files
+      // Upload all files with descriptive labels
+      const LABEL_MAP: Record<string, string> = {
+        photo: "[Product Photo]",
+        leftLogo: "[Logo Left]",
+        rightLogo: "[Logo Right]",
+        backLogo: "[Logo Back]",
+      };
       const filesToUpload: { file: File; label: string }[] = [];
       if (photoFile) filesToUpload.push({ file: photoFile, label: "photo" });
       if (leftLogo) filesToUpload.push({ file: leftLogo, label: "leftLogo" });
       if (rightLogo) filesToUpload.push({ file: rightLogo, label: "rightLogo" });
       if (backLogo) filesToUpload.push({ file: backLogo, label: "backLogo" });
 
-      for (const { file } of filesToUpload) {
+      for (const { file, label } of filesToUpload) {
+        const labeledFile = new File([file], `${LABEL_MAP[label]} ${file.name}`, { type: file.type });
         const uploadData = new FormData();
-        uploadData.append("file", file);
+        uploadData.append("file", labeledFile);
         uploadData.append("orderId", orderId);
 
         await fetch("/api/uploads", {
@@ -319,8 +348,9 @@ function CustomOrderContent() {
         status: "pending",
         customerName: form.name.trim(),
         phone: form.phone.trim(),
-        address: form.address.trim(),
+        mapLocation: `${form.mapLat}, ${form.mapLng}`,
         teamName: form.teamName.trim(),
+        productType: form.productType,
         cuttingFront: form.cuttingFront,
         cuttingBack: form.cuttingBack,
         cuttingBelow: form.cuttingBelow,
@@ -328,6 +358,8 @@ function CustomOrderContent() {
         deadline: `${form.deadlineDate} ${form.deadlineTime}`,
         players: sortedPlayers.map((p) => ({ size: p.size, number: p.number, surname: p.surname })),
         instructions: form.otherInstructions.trim(),
+        unitPriceCents,
+        totalCents,
       });
       setForm(initialForm);
       setPhotoFile(null);
@@ -379,12 +411,16 @@ function CustomOrderContent() {
                   <p className="text-sm text-neutral-900">{orderSummary.phone}</p>
                 </div>
                 <div className="space-y-1 md:col-span-2">
-                  <p className="text-xs font-medium uppercase text-neutral-500">Address</p>
-                  <p className="text-sm text-neutral-900">{orderSummary.address}</p>
+                  <p className="text-xs font-medium uppercase text-neutral-500">Delivery Location</p>
+                  <p className="text-sm text-neutral-900">{orderSummary.mapLocation}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-xs font-medium uppercase text-neutral-500">Team Name</p>
                   <p className="text-sm text-neutral-900">{orderSummary.teamName}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium uppercase text-neutral-500">Product Type</p>
+                  <p className="text-sm text-neutral-900">{orderSummary.productType}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-xs font-medium uppercase text-neutral-500">Cutting Style</p>
@@ -431,6 +467,20 @@ function CustomOrderContent() {
                     <p className="text-sm text-neutral-900">{orderSummary.instructions}</p>
                   </div>
                 )}
+                <div className="space-y-2 md:col-span-2 rounded-lg border border-green-200 bg-white p-4">
+                  <div className="flex justify-between text-sm text-neutral-700">
+                    <span>Price per unit ({orderSummary.productType})</span>
+                    <span>{formatCurrency(orderSummary.unitPriceCents)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-neutral-700">
+                    <span>Total players</span>
+                    <span>{orderSummary.players.length}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-neutral-200 pt-2 text-base font-bold text-neutral-900">
+                    <span>Total Payable</span>
+                    <span>{formatCurrency(orderSummary.totalCents)}</span>
+                  </div>
+                </div>
               </div>
               <div className="flex gap-3 pt-2">
                 <Link href={`/order-summary/${orderSummary.orderNumber}`}>
@@ -476,52 +526,29 @@ function CustomOrderContent() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="address">Address *</Label>
-                <Textarea
-                  id="address"
-                  value={form.address}
-                  onChange={(e) => updateField("address", e.target.value)}
-                  required
-                />
-              </div>
-
               {/* Product Selection */}
-              <div className="grid gap-5 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="product">Product {fromCollection && "*"}</Label>
-                  <select
-                    id="product"
-                    className="flex h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm"
-                    value={form.productId}
-                    onChange={(e) => handleProductChange(e.target.value)}
-                  >
-                    <option value="">Select product (optional for custom)</option>
-                    {activeProducts.map((product) => (
-                      <option value={product.id} key={product.id}>
-                        {product.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="quantity">Quantity *</Label>
-                  <Input
-                    id="quantity"
-                    type="number"
-                    min={1}
-                    value={form.quantity}
-                    onChange={(e) => updateField("quantity", e.target.value)}
-                    required
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="product">Product {fromCollection && "*"}</Label>
+                <select
+                  id="product"
+                  className="flex h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm"
+                  value={form.productId}
+                  onChange={(e) => handleProductChange(e.target.value)}
+                >
+                  <option value="">Select product (optional for custom)</option>
+                  {activeProducts.map((product) => (
+                    <option value={product.id} key={product.id}>
+                      {product.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Photo Attachment */}
               <div className="space-y-2">
                 <Label htmlFor="photo">
                   Photo Attachment{" "}
-                  <span className="text-xs text-neutral-400">(max 500KB)</span>
+                  <span className="text-xs text-neutral-400">(max 2MB)</span>
                 </Label>
                 <Input
                   id="photo"
@@ -532,8 +559,8 @@ function CustomOrderContent() {
                     setPhotoFile(f);
                   }}
                 />
-                {photoFile && fileErr(photoFile, 500) && (
-                  <p className="text-xs text-red-600">{fileErr(photoFile, 500)}</p>
+                {photoFile && fileErr(photoFile) && (
+                  <p className="text-xs text-red-600">{fileErr(photoFile)}</p>
                 )}
               </div>
 
@@ -685,7 +712,7 @@ function CustomOrderContent() {
                 <legend className="px-2 text-sm font-semibold text-neutral-700">
                   Logo Attachments{" "}
                   <span className="text-xs font-normal text-neutral-400">
-                    (max 200KB each)
+                    (max 2MB each)
                   </span>
                 </legend>
                 <div className="grid gap-5 md:grid-cols-3">
@@ -697,9 +724,9 @@ function CustomOrderContent() {
                       accept="image/*"
                       onChange={(e) => setLeftLogo(e.target.files?.[0] || null)}
                     />
-                    {leftLogo && fileErr(leftLogo, 200) && (
+                    {leftLogo && fileErr(leftLogo) && (
                       <p className="text-xs text-red-600">
-                        {fileErr(leftLogo, 200)}
+                        {fileErr(leftLogo)}
                       </p>
                     )}
                   </div>
@@ -711,9 +738,9 @@ function CustomOrderContent() {
                       accept="image/*"
                       onChange={(e) => setRightLogo(e.target.files?.[0] || null)}
                     />
-                    {rightLogo && fileErr(rightLogo, 200) && (
+                    {rightLogo && fileErr(rightLogo) && (
                       <p className="text-xs text-red-600">
-                        {fileErr(rightLogo, 200)}
+                        {fileErr(rightLogo)}
                       </p>
                     )}
                   </div>
@@ -725,9 +752,9 @@ function CustomOrderContent() {
                       accept="image/*"
                       onChange={(e) => setBackLogo(e.target.files?.[0] || null)}
                     />
-                    {backLogo && fileErr(backLogo, 200) && (
+                    {backLogo && fileErr(backLogo) && (
                       <p className="text-xs text-red-600">
-                        {fileErr(backLogo, 200)}
+                        {fileErr(backLogo)}
                       </p>
                     )}
                   </div>
@@ -754,6 +781,7 @@ function CustomOrderContent() {
                   <Input
                     id="deadlineDate"
                     type="date"
+                    min={new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]}
                     value={form.deadlineDate}
                     onChange={(e) =>
                       updateField("deadlineDate", e.target.value)
@@ -766,6 +794,8 @@ function CustomOrderContent() {
                   <Input
                     id="deadlineTime"
                     type="time"
+                    min="08:00"
+                    max="17:00"
                     value={form.deadlineTime}
                     onChange={(e) =>
                       updateField("deadlineTime", e.target.value)
@@ -786,19 +816,52 @@ function CustomOrderContent() {
                     updateField("paymentMethod", e.target.value)
                   }
                 >
-                  <option>Cash on Delivery</option>
-                  <option>Instapay</option>
+                  {(paymentMethods || []).map((pm) => (
+                    <option key={pm.id} value={pm.name} disabled={pm.is_available !== 1}>
+                      {pm.name}{pm.is_available !== 1 ? " (Unavailable)" : ""}
+                    </option>
+                  ))}
+                  {!paymentMethods && (
+                    <>
+                      <option>Cash on Delivery</option>
+                      <option disabled>Instapay (Unavailable)</option>
+                      <option disabled>Bank Transfer (Unavailable)</option>
+                    </>
+                  )}
                 </select>
               </div>
+
+              {/* Pricing Summary */}
+              {form.productType && (
+                <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4 space-y-2">
+                  <h3 className="text-sm font-semibold text-neutral-700">Order Pricing</h3>
+                  <div className="flex justify-between text-sm text-neutral-600">
+                    <span>Product Type</span>
+                    <span>{form.productType}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-neutral-600">
+                    <span>Price per unit</span>
+                    <span>{formatCurrency(unitPriceCents)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-neutral-600">
+                    <span>Total players (quantity)</span>
+                    <span>{totalPlayers}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-neutral-300 pt-2 text-base font-bold text-neutral-900">
+                    <span>Total Payable</span>
+                    <span>{formatCurrency(totalCents)}</span>
+                  </div>
+                </div>
+              )}
 
               {/* Map Pin Location */}
               <fieldset className="space-y-4 rounded-xl border border-neutral-200 p-4">
                 <legend className="px-2 text-sm font-semibold text-neutral-700">
-                  Map Pin Location
+                  Map Pin Location *
                 </legend>
                 <p className="text-xs text-neutral-500">
                   Click the map to set your delivery pin, or enter coordinates
-                  manually.
+                  manually. This is required.
                 </p>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-1">

@@ -19,6 +19,8 @@ export type Product = {
   category_name?: string | null;
   image_url?: string | null;
   rating?: number;
+  is_banner?: number;
+  created_at?: string;
 };
 
 export type OrderFile = {
@@ -118,4 +120,26 @@ export type ReportPayload = {
     revenue_cents: number;
   }>;
   designerPerformance: DesignerPerformance[];
+  orderStatusBreakdown: Array<{
+    status: string;
+    count: number;
+  }>;
+  categoryRevenue: Array<{
+    category_id: number;
+    category_name: string;
+    revenue_cents: number;
+    total_quantity: number;
+  }>;
+  monthlyTrends: Array<{
+    month: string;
+    order_count: number;
+    revenue_cents: number;
+    avg_order_cents: number;
+  }>;
+  topCustomers: Array<{
+    customer_id: number;
+    customer_name: string;
+    order_count: number;
+    total_spent_cents: number;
+  }>;
 };

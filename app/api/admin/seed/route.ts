@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
         slug TEXT NOT NULL UNIQUE,
         description TEXT,
         base_price_cents INTEGER NOT NULL DEFAULT 0,
-        currency TEXT NOT NULL DEFAULT 'USD',
+        currency TEXT NOT NULL DEFAULT 'PHP',
         status TEXT NOT NULL DEFAULT 'draft',
         is_banner INTEGER NOT NULL DEFAULT 0,
         created_by TEXT,
@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
         shipping_cents INTEGER NOT NULL DEFAULT 0,
         discount_cents INTEGER NOT NULL DEFAULT 0,
         total_cents INTEGER NOT NULL DEFAULT 0,
-        currency TEXT NOT NULL DEFAULT 'USD',
+        currency TEXT NOT NULL DEFAULT 'PHP',
         placed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         fulfilled_at TEXT,
         cancelled_at TEXT,
@@ -198,7 +198,7 @@ export async function POST(request: NextRequest) {
         provider TEXT NOT NULL DEFAULT 'cash',
         provider_txn_id TEXT UNIQUE,
         amount_cents INTEGER NOT NULL DEFAULT 0,
-        currency TEXT NOT NULL DEFAULT 'USD',
+        currency TEXT NOT NULL DEFAULT 'PHP',
         status TEXT NOT NULL DEFAULT 'pending',
         paid_at TEXT,
         metadata_json TEXT,
@@ -217,6 +217,16 @@ export async function POST(request: NextRequest) {
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (payment_id) REFERENCES payments(id) ON DELETE CASCADE,
         FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+      )`,
+      `CREATE TABLE IF NOT EXISTS ratings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id TEXT NOT NULL UNIQUE,
+        customer_name TEXT NOT NULL,
+        rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+        review_text TEXT,
+        is_custom_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
       )`
     ];
 
@@ -224,6 +234,12 @@ export async function POST(request: NextRequest) {
       await sqlRun(db, sql, []);
     }
     steps.push("ensured all tables exist");
+
+    // ── Migrate currency to PHP ──────────────────────────────────
+    await sqlRun(db, "UPDATE products SET currency = 'PHP' WHERE currency = 'USD'", []);
+    await sqlRun(db, "UPDATE orders SET currency = 'PHP' WHERE currency = 'USD'", []);
+    await sqlRun(db, "UPDATE payments SET currency = 'PHP' WHERE currency = 'USD'", []);
+    steps.push("migrated currency to PHP");
 
     // ── Seed admin owner ──────────────────────────────────────────
     const existing = await sqlFirst<{ id: string }>(

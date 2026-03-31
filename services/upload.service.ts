@@ -14,8 +14,9 @@ export async function uploadFileToR2(
   rawMetadata: unknown,
   uploadedBy?: string
 ) {
-  if (!env.ASSETS) {
-    throw new AppError("R2 bucket binding ASSETS is not configured", 500, "R2_NOT_CONFIGURED");
+  const bucket = env.ORDER_FILES ?? env.ASSETS;
+  if (!bucket) {
+    throw new AppError("R2 bucket binding ORDER_FILES is not configured", 500, "R2_NOT_CONFIGURED");
   }
 
   const metadata = metadataSchema.parse(rawMetadata);
@@ -23,12 +24,12 @@ export async function uploadFileToR2(
     throw new AppError("Uploaded file is empty", 400, "EMPTY_FILE");
   }
 
-  const sanitizedBase = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const sanitizedBase = file.name.replace(/[^a-zA-Z0-9._\-\[\] ]/g, "_");
   const keyPrefix = metadata.orderId ? `orders/${metadata.orderId}` : "uploads";
   const key = `${keyPrefix}/${crypto.randomUUID()}-${sanitizedBase}`;
   const bytes = await file.arrayBuffer();
 
-  await env.ASSETS.put(key, bytes, {
+  await bucket.put(key, bytes, {
     httpMetadata: {
       contentType: file.type || "application/octet-stream"
     }
