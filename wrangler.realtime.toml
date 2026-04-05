@@ -1,9 +1,12 @@
 name = "crossover-apparel-realtime"
+account_id = "8e226d91f14776d424e51ec885e88f85"
 main = "workers/realtime-worker.ts"
 compatibility_date = "2026-03-25"
+compatibility_flags = ["nodejs_compat"]
 
 [vars]
-REALTIME_API_TOKEN = "REPLACE_WITH_SECURE_TOKEN"
+# IMPORTANT: Do NOT put secrets here.
+# Run: wrangler secret put REALTIME_API_TOKEN --config wrangler.realtime.toml
 
 [[durable_objects.bindings]]
 name = "REALTIME_HUB"

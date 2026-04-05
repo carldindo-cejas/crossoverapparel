@@ -43,6 +43,23 @@ export type OrderItem = {
   line_total_cents: number;
 };
 
+export type OrderCustomization = {
+  id: number;
+  order_item_id: number;
+  customization_type: string;
+  field_name: string;
+  field_value: string;
+  additional_cost_cents: number;
+};
+
+export type OrderStatusLog = {
+  id: number;
+  previous_status: string | null;
+  new_status: string;
+  reason: string | null;
+  changed_at: string;
+};
+
 export type Order = {
   id: string;
   order_number: string;
@@ -59,6 +76,8 @@ export type Order = {
   customer_name: string;
   items: OrderItem[];
   files: OrderFile[];
+  customizations: OrderCustomization[];
+  history: OrderStatusLog[];
 };
 
 export type ApiEnvelope<T> =

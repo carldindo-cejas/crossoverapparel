@@ -32,6 +32,7 @@ type DesignerOrderDetails = {
   customer_name: string;
   customer_email: string;
   notes: string | null;
+  assignment_status: string;
   items: Array<{
     id: number;
     product_name_snapshot: string;
@@ -57,22 +58,22 @@ type DesignerOrderDetails = {
   customizations: Customization[];
 };
 
-const STATUSES = [
-  "pending",
-  "confirmed",
-  "in_production",
-  "ready_to_ship",
-  "shipped",
-  "delivered"
-];
+const DESIGNER_STATUSES = ["received", "working", "done"] as const;
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: "bg-yellow-100 text-yellow-800",
-  confirmed: "bg-blue-100 text-blue-800",
-  in_production: "bg-purple-100 text-purple-800",
-  ready_to_ship: "bg-indigo-100 text-indigo-800",
-  shipped: "bg-cyan-100 text-cyan-800",
-  delivered: "bg-green-100 text-green-800",
+const ASSIGNMENT_TO_DESIGNER: Record<string, string> = {
+  assigned: "received",
+  in_progress: "working",
+  completed: "done",
+};
+
+function getDesignerStatus(assignmentStatus: string): string {
+  return ASSIGNMENT_TO_DESIGNER[assignmentStatus] ?? "received";
+}
+
+const DESIGNER_STATUS_COLORS: Record<string, string> = {
+  received: "bg-blue-100 text-blue-800",
+  working: "bg-orange-100 text-orange-800",
+  done: "bg-green-100 text-green-800",
 };
 
 function formatBytes(bytes: number) {
@@ -84,7 +85,7 @@ function formatBytes(bytes: number) {
 export default function DesignerOrderDetailsPage() {
   const params = useParams<{ orderNumber: string }>();
   const [order, setOrder] = useState<DesignerOrderDetails | null>(null);
-  const [nextStatus, setNextStatus] = useState("in_production");
+  const [nextStatus, setNextStatus] = useState("received");
   const [note, setNote] = useState("");
   const [updating, setUpdating] = useState(false);
 
@@ -96,7 +97,7 @@ export default function DesignerOrderDetailsPage() {
 
     if (response.ok && payload.success) {
       setOrder(payload.data);
-      setNextStatus(payload.data.status);
+      setNextStatus(getDesignerStatus(payload.data.assignment_status));
     }
   }
 
@@ -145,8 +146,8 @@ export default function DesignerOrderDetailsPage() {
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <CardTitle className="text-2xl">{order.order_number}</CardTitle>
-            <Badge className={STATUS_COLORS[order.status] || "bg-neutral-100 text-neutral-600"}>
-              {order.status.replace(/_/g, " ")}
+            <Badge className={DESIGNER_STATUS_COLORS[getDesignerStatus(order.assignment_status)] || "bg-neutral-100 text-neutral-600"}>
+              {getDesignerStatus(order.assignment_status)}
             </Badge>
           </div>
         </CardHeader>
@@ -328,25 +329,26 @@ export default function DesignerOrderDetailsPage() {
       {/* Update Status */}
       <Card>
         <CardHeader>
-          <CardTitle>Update Order Status</CardTitle>
+          <CardTitle>Update Designer Status</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-3">
           <select
             className="h-10 rounded-xl border border-neutral-300 px-3"
             value={nextStatus}
+            disabled={getDesignerStatus(order.assignment_status) === "done"}
             onChange={(event) => setNextStatus(event.target.value)}
           >
-            {STATUSES.map((status) => (
+            {DESIGNER_STATUSES.map((status) => (
               <option key={status} value={status}>
-                {status.replace(/_/g, " ")}
+                {status.charAt(0).toUpperCase() + status.slice(1)}
               </option>
             ))}
           </select>
-          <Button onClick={updateStatus} disabled={updating || nextStatus === order.status}>
+          <Button onClick={updateStatus} disabled={updating || nextStatus === getDesignerStatus(order.assignment_status) || getDesignerStatus(order.assignment_status) === "done"}>
             {updating ? "Saving..." : "Save Status"}
           </Button>
           <span className="text-sm text-neutral-500">
-            Current: <span className="font-medium">{order.status.replace(/_/g, " ")}</span>
+            Current: <span className="font-medium capitalize">{getDesignerStatus(order.assignment_status)}</span>
           </span>
         </CardContent>
       </Card>

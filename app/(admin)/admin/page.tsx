@@ -27,7 +27,7 @@ type DesignerCommission = {
 
 export default function AdminDashboardPage() {
   const [refreshTick, setRefreshTick] = useState(0);
-  const { data, loading, error } = useApi<DashboardSummary>(`/api/owner/dashboard?tick=${refreshTick}`);
+  const { data, loading, error } = useApi<DashboardSummary>(`/api/admin/dashboard?tick=${refreshTick}`);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [commissions, setCommissions] = useState<DesignerCommission[]>([]);
   const [notifications, setNotifications] = useState<Array<{ id: string; message: string; time: Date }>>([]);
@@ -72,7 +72,7 @@ export default function AdminDashboardPage() {
       if (res.ok && payload.success) setPaymentMethods(payload.data);
     }
     async function loadCommissions() {
-      const res = await fetch("/api/owner/commissions", { cache: "no-store" });
+      const res = await fetch("/api/admin/commissions", { cache: "no-store" });
       const payload = (await res.json()) as ApiEnvelope<DesignerCommission[]>;
       if (res.ok && payload.success) setCommissions(payload.data);
     }

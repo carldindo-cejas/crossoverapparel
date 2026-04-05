@@ -22,13 +22,20 @@ export function getWorkerEnv(): WorkerEnv {
     throw new AppError("PRESENCE_HUB binding is not configured", 500, "ENV_MISSING");
   }
 
+  if (!cloudflareEnv.AUTH_SECRET) {
+    throw new AppError("AUTH_SECRET is not configured. Run: wrangler secret put AUTH_SECRET", 500, "ENV_MISSING");
+  }
+
   return {
     DB: cloudflareEnv.DB,
     ASSETS: cloudflareEnv.ASSETS,
     PRODUCT_IMAGES: cloudflareEnv.PRODUCT_IMAGES,
     ORDER_FILES: cloudflareEnv.ORDER_FILES,
     PRESENCE_HUB: cloudflareEnv.PRESENCE_HUB,
-    AUTH_SECRET: cloudflareEnv.AUTH_SECRET || "",
-    R2_PUBLIC_BASE_URL: cloudflareEnv.R2_PUBLIC_BASE_URL
+    AUTH_SECRET: cloudflareEnv.AUTH_SECRET,
+    R2_PUBLIC_BASE_URL: cloudflareEnv.R2_PUBLIC_BASE_URL,
+    REALTIME_API_URL: cloudflareEnv.REALTIME_API_URL,
+    REALTIME_API_TOKEN: cloudflareEnv.REALTIME_API_TOKEN,
+    SEED_KEY: cloudflareEnv.SEED_KEY,
   };
 }

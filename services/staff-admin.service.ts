@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { getDb, type WorkerEnv } from "@/db/client";
-import { sqlAll, sqlRun } from "@/db/raw";
+import { sqlAll, sqlFirst, sqlRun } from "@/db/raw";
 import { hashPassword } from "@/lib/auth/password";
+import { AppError } from "@/lib/errors";
 
 const createDesignerSchema = z.object({
   fullName: z.string().min(1),
@@ -16,17 +17,29 @@ const activateSchema = z.object({
 export async function createDesigner(env: WorkerEnv, rawBody: unknown) {
   const body = createDesignerSchema.parse(rawBody);
   const db = getDb(env);
-  const passwordHash = await hashPassword(body.password);
 
-  const result = await sqlRun(
+  const existing = await sqlFirst<{ id: string }>(
     db,
-    `INSERT INTO users (email, password_hash, salt, name, full_name, role, is_active)
-     VALUES (?, ?, '', ?, ?, 'designer', 1)`,
-    [body.email.toLowerCase(), passwordHash, body.fullName, body.fullName]
+    "SELECT id FROM users WHERE email = ? LIMIT 1",
+    [body.email.toLowerCase()]
+  );
+
+  if (existing) {
+    throw new AppError("An account with this email already exists", 409, "EMAIL_TAKEN");
+  }
+
+  const passwordHash = await hashPassword(body.password);
+  const id = crypto.randomUUID();
+
+  await sqlRun(
+    db,
+    `INSERT INTO users (id, email, password_hash, full_name, role, is_active)
+     VALUES (?, ?, ?, ?, 'designer', 1)`,
+    [id, body.email.toLowerCase(), passwordHash, body.fullName]
   );
 
   return {
-    id: String(result.meta?.last_row_id ?? ""),
+    id,
     email: body.email.toLowerCase(),
     fullName: body.fullName,
     role: "designer",

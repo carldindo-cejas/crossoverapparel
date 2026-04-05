@@ -10,7 +10,7 @@ export async function PATCH(
 ) {
   try {
     const env = getWorkerEnv();
-    const session = await requireAuth(request, env.AUTH_SECRET, ["owner", "designer"]);
+    const session = await requireAuth(request, env.AUTH_SECRET, ["owner"]);
     const { orderId } = await params;
     const body = await request.json();
     const result = await addOrderNote(env, orderId, session.sub, body);

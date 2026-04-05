@@ -8,7 +8,12 @@ const submitRatingSchema = z.object({
   reviewText: z.string().max(500).optional(),
 });
 
-export async function submitRating(env: WorkerEnv, orderNumber: string, rawBody: unknown) {
+export async function submitRating(
+  env: WorkerEnv,
+  orderNumber: string,
+  rawBody: unknown,
+  customerPhone?: string | null
+) {
   const db = getDb(env);
   const body = submitRatingSchema.parse(rawBody);
 
@@ -17,9 +22,10 @@ export async function submitRating(env: WorkerEnv, orderNumber: string, rawBody:
     status: string;
     notes: string | null;
     customer_name: string;
+    customer_phone: string | null;
   }>(
     db,
-    `SELECT o.id, o.status, o.notes, (c.first_name || ' ' || c.last_name) as customer_name
+    `SELECT o.id, o.status, o.notes, (c.first_name || ' ' || c.last_name) as customer_name, c.phone as customer_phone
      FROM orders o
      INNER JOIN customers c ON c.id = o.customer_id
      WHERE o.order_number = ?
@@ -29,6 +35,15 @@ export async function submitRating(env: WorkerEnv, orderNumber: string, rawBody:
 
   if (!order) {
     throw new AppError("Order not found", 404, "ORDER_NOT_FOUND");
+  }
+
+  // Verify caller phone for guest access
+  if (customerPhone !== undefined && customerPhone !== null) {
+    const normalize = (p: string) => p.replace(/\D/g, "");
+    const stored = normalize(order.customer_phone ?? "");
+    if (!stored || normalize(customerPhone) !== stored) {
+      throw new AppError("Order not found", 404, "ORDER_NOT_FOUND");
+    }
   }
 
   if (order.status !== "delivered") {

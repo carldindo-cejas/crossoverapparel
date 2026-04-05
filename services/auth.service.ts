@@ -35,9 +35,9 @@ export async function loginOwner(env: WorkerEnv, rawBody: unknown) {
     db,
     `SELECT id, email, password_hash, role, full_name, is_active
      FROM users
-     WHERE (email = ? OR full_name = ? OR name = ?) AND role = 'owner'
+     WHERE (email = ? OR full_name = ?) AND role = 'owner'
      LIMIT 1`,
-    [body.username.toLowerCase(), body.username, body.username]
+    [body.username.toLowerCase(), body.username]
   );
 
   if (!user || !user.password_hash || user.is_active !== 1) {

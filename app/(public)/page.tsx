@@ -86,10 +86,11 @@ function ProductCarousel({ products, showNewRibbon = false }: { products: Produc
                   </span>
                 )}
                 {product.image_url ? (
-                  <img
+                  <Image
                     src={`/api/products/images/${product.image_url}`}
                     alt={product.name}
-                    className="h-full w-full object-cover"
+                    fill
+                    className="object-cover"
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-100 to-neutral-200">
@@ -198,10 +199,12 @@ export default function HomePage() {
           className="relative aspect-[4/5] overflow-hidden rounded-[2rem] border border-neutral-200"
         >
           {bannerProduct?.image_url ? (
-            <img
+            <Image
               src={bannerImageSrc}
               alt={bannerProduct?.name || "Crossover Apparel Banner"}
-              className="h-full w-full object-cover"
+              fill
+              className="object-cover"
+              priority
             />
           ) : (
             <Image
@@ -296,9 +299,11 @@ export default function HomePage() {
                 <Card className="h-full border-neutral-200">
                   <CardContent className="p-5 space-y-3">
                     <StarRating rating={t.rating} />
-                    <p className="text-sm text-neutral-600 italic leading-relaxed">
-                      &ldquo;{t.review_text}&rdquo;
-                    </p>
+                    {t.review_text && (
+                      <p className="text-sm text-neutral-600 italic leading-relaxed">
+                        &ldquo;{t.review_text}&rdquo;
+                      </p>
+                    )}
                     <div className="flex items-center justify-between pt-1">
                       <p className="text-sm font-semibold text-neutral-900">{t.customer_name}</p>
                       <p className="text-xs text-neutral-400">{formatDate(t.created_at)}</p>

@@ -20,6 +20,13 @@ async function ensureTable(env: WorkerEnv) {
     await sqlRun(db, "INSERT INTO payment_methods (name, is_available) VALUES ('Cash on Delivery', 1)");
     await sqlRun(db, "INSERT INTO payment_methods (name, is_available) VALUES ('Instapay', 0)");
     await sqlRun(db, "INSERT INTO payment_methods (name, is_available) VALUES ('Bank Transfer', 0)");
+    await sqlRun(db, "INSERT INTO payment_methods (name, is_available) VALUES ('Pay with Bitcoin Lightning', 1)");
+  }
+
+  // Ensure Bitcoin Lightning exists for existing databases
+  const btcLn = await sqlFirst<{ id: number }>(db, "SELECT id FROM payment_methods WHERE name = 'Pay with Bitcoin Lightning' LIMIT 1");
+  if (!btcLn) {
+    await sqlRun(db, "INSERT OR IGNORE INTO payment_methods (name, is_available) VALUES ('Pay with Bitcoin Lightning', 1)");
   }
 }
 

@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_role_active ON users(role, is_active);
 
 CREATE TABLE IF NOT EXISTS staff_presence (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -125,6 +126,7 @@ CREATE TABLE IF NOT EXISTS orders (
   fulfilled_at TEXT,
   cancelled_at TEXT,
   notes TEXT,
+  quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (customer_id) REFERENCES customers(id) ON UPDATE CASCADE ON DELETE RESTRICT
@@ -195,7 +197,8 @@ CREATE TABLE IF NOT EXISTS designer_assignments (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (order_id) REFERENCES orders(id) ON UPDATE CASCADE ON DELETE CASCADE,
   FOREIGN KEY (designer_user_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT,
-  FOREIGN KEY (assigned_by) REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT
+  FOREIGN KEY (assigned_by) REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  UNIQUE (order_id, designer_user_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_designer_assignments_order_status ON designer_assignments(order_id, status);

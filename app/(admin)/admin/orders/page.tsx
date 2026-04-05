@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useRealtime } from "@/hooks/use-realtime";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { type ApiEnvelope, type Order, type StaffRecord } from "@/lib/types";
+
+const PAGE_SIZE = 20;
 
 type OrderRow = {
   id: string;
@@ -28,19 +31,42 @@ export default function AdminOrdersPage() {
   const [designerByOrder, setDesignerByOrder] = useState<Record<string, string>>({});
   const [statusUpdatingByOrder, setStatusUpdatingByOrder] = useState<Record<string, boolean>>({});
   const [assigningByOrder, setAssigningByOrder] = useState<Record<string, boolean>>({});
+  const [assignErrorByOrder, setAssignErrorByOrder] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return orders;
+    const q = search.toLowerCase();
+    return orders.filter(
+      (o) =>
+        o.order_number.toLowerCase().includes(q) ||
+        o.customer_name.toLowerCase().includes(q) ||
+        o.customer_email.toLowerCase().includes(q)
+    );
+  }, [orders, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   async function load() {
-    const [ordersRes, staffRes] = await Promise.all([
-      fetch("/api/owner/orders", { cache: "no-store" }),
-      fetch("/api/owner/staff", { cache: "no-store" })
-    ]);
+    setLoading(true);
+    try {
+      const [ordersRes, staffRes] = await Promise.all([
+        fetch("/api/admin/orders", { cache: "no-store" }),
+        fetch("/api/admin/staff", { cache: "no-store" })
+      ]);
 
-    const ordersPayload = (await ordersRes.json()) as ApiEnvelope<OrderRow[]>;
-    const staffPayload = (await staffRes.json()) as ApiEnvelope<StaffRecord[]>;
+      const ordersPayload = (await ordersRes.json()) as ApiEnvelope<OrderRow[]>;
+      const staffPayload = (await staffRes.json()) as ApiEnvelope<StaffRecord[]>;
 
-    if (ordersRes.ok && ordersPayload.success) setOrders(ordersPayload.data);
-    if (staffRes.ok && staffPayload.success) {
-      setDesigners(staffPayload.data);
+      if (ordersRes.ok && ordersPayload.success) setOrders(ordersPayload.data);
+      if (staffRes.ok && staffPayload.success) {
+        setDesigners(staffPayload.data);
+      }
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -51,7 +77,7 @@ export default function AdminOrdersPage() {
   useRealtime({
     role: "owner",
     onEvent: (event) => {
-      if (event.type === "assignment.updated" || event.type === "order.status.updated") {
+      if (event.type === "assignment.updated" || event.type === "order.status.updated" || event.type === "order.created") {
         load();
       }
     }
@@ -59,8 +85,12 @@ export default function AdminOrdersPage() {
 
   async function assignDesigner(orderId: string) {
     const designerUserId = designerByOrder[orderId];
-    if (!designerUserId) return;
+    if (!designerUserId) {
+      setAssignErrorByOrder((prev) => ({ ...prev, [orderId]: "Please select a designer first." }));
+      return;
+    }
 
+    setAssignErrorByOrder((prev) => ({ ...prev, [orderId]: "" }));
     const previous = orders.find((order) => order.id === orderId);
     const selectedDesigner = designers.find((designer) => designer.id === designerUserId);
 
@@ -77,24 +107,38 @@ export default function AdminOrdersPage() {
       )
     );
 
-    const response = await fetch(`/api/owner/orders/${orderId}/assign-designer`, {
+    const response = await fetch(`/api/admin/orders/${orderId}/assign-designer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ designerUserId })
     });
 
-    if (!response.ok && previous) {
-      setOrders((prev) =>
-        prev.map((order) =>
-          order.id === orderId
-            ? {
-                ...order,
-                assignment_designer_id: previous.assignment_designer_id,
-                assignment_designer_name: previous.assignment_designer_name
-              }
-            : order
-        )
-      );
+    if (!response.ok) {
+      if (previous) {
+        setOrders((prev) =>
+          prev.map((order) =>
+            order.id === orderId
+              ? {
+                  ...order,
+                  assignment_designer_id: previous.assignment_designer_id,
+                  assignment_designer_name: previous.assignment_designer_name
+                }
+              : order
+          )
+        );
+      }
+      try {
+        const errPayload = (await response.json()) as { error?: { message?: string } };
+        setAssignErrorByOrder((prev) => ({
+          ...prev,
+          [orderId]: errPayload.error?.message || `Assignment failed (${response.status})`
+        }));
+      } catch {
+        setAssignErrorByOrder((prev) => ({
+          ...prev,
+          [orderId]: `Assignment failed (${response.status})`
+        }));
+      }
     }
 
     setAssigningByOrder((prev) => ({ ...prev, [orderId]: false }));
@@ -113,13 +157,23 @@ export default function AdminOrdersPage() {
     }
   }
 
+  function paymentStatusColor(status: string): string {
+    switch (status) {
+      case "paid":     return "bg-green-100 text-green-800";
+      case "partial":  return "bg-yellow-100 text-yellow-800";
+      case "refunded": return "bg-blue-100 text-blue-800";
+      case "failed":   return "bg-red-100 text-red-800";
+      default:         return "bg-red-50 text-red-600";
+    }
+  }
+
   async function updateStatus(orderId: string, status: string) {
     const previousStatus = orders.find((order) => order.id === orderId)?.status;
 
     setStatusUpdatingByOrder((prev) => ({ ...prev, [orderId]: true }));
     setOrders((prev) => prev.map((order) => (order.id === orderId ? { ...order, status } : order)));
 
-    const response = await fetch(`/api/owner/orders/${orderId}/status`, {
+    const response = await fetch(`/api/admin/orders/${orderId}/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status })
@@ -149,9 +203,22 @@ export default function AdminOrdersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Orders</CardTitle>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CardTitle>Orders ({filtered.length})</CardTitle>
+            <Input
+              placeholder="Search orders..."
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+              className="max-w-xs"
+              aria-label="Search orders"
+            />
+          </div>
         </CardHeader>
         <CardContent className="overflow-x-auto">
+          {loading && orders.length === 0 ? (
+            <p className="py-8 text-center text-sm text-neutral-600">Loading orders...</p>
+          ) : (
+            <>
           <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="text-neutral-500">
               <tr>
@@ -159,19 +226,25 @@ export default function AdminOrdersPage() {
                 <th className="px-2 py-3">Customer</th>
                 <th className="px-2 py-3">Placed</th>
                 <th className="px-2 py-3">Total</th>
+                <th className="px-2 py-3">Payment</th>
                 <th className="px-2 py-3">Status</th>
                 <th className="px-2 py-3">Staff</th>
                 <th className="px-2 py-3">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {orders.map((order) => (
+              {paged.map((order) => (
                 <tr key={order.id} className="border-t border-neutral-200">
                   <td className="px-2 py-3 font-medium text-neutral-900">{order.order_number}</td>
                   <td className="px-2 py-3 text-neutral-700">{order.customer_name}</td>
                   <td className="px-2 py-3 text-neutral-700">{formatDate(order.placed_at)}</td>
                   <td className="px-2 py-3 text-neutral-700">
                     {formatCurrency(order.total_cents, order.currency)}
+                  </td>
+                  <td className="px-2 py-3">
+                    <span className={`inline-flex w-fit items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${paymentStatusColor(order.payment_status)}`}>
+                      {order.payment_status === "paid" ? "Paid" : order.payment_status === "partial" ? "Partial" : order.payment_status === "refunded" ? "Refunded" : order.payment_status === "failed" ? "Failed" : "Unpaid"}
+                    </span>
                   </td>
                   <td className="px-2 py-3">
                     <div className="flex flex-col gap-1.5">
@@ -190,7 +263,9 @@ export default function AdminOrdersPage() {
                           "in_production",
                           "ready_to_ship",
                           "shipped",
-                          "delivered"
+                          "delivered",
+                          "cancelled",
+                          "refunded"
                         ].map((status) => (
                           <option key={status} value={status}>
                             {status}
@@ -200,6 +275,13 @@ export default function AdminOrdersPage() {
                     </div>
                   </td>
                   <td className="px-2 py-3">
+                    {order.assignment_designer_id ? (
+                      <div>
+                        <span className="inline-flex items-center rounded-full bg-green-50 px-3 py-1 text-sm font-medium text-green-800">
+                          {order.assignment_designer_name}
+                        </span>
+                      </div>
+                    ) : (
                     <div className="flex gap-2">
                       <select
                         className="h-9 rounded-lg border border-neutral-300 px-2"
@@ -219,15 +301,16 @@ export default function AdminOrdersPage() {
                       <Button
                         size="sm"
                         variant="secondary"
-                        disabled={assigningByOrder[order.id] === true}
+                        disabled={assigningByOrder[order.id] === true || !designerByOrder[order.id]}
                         onClick={() => assignDesigner(order.id)}
                       >
                         {assigningByOrder[order.id] ? "Assigning..." : "Assign"}
                       </Button>
                     </div>
-                    {order.assignment_designer_name ? (
-                      <p className="mt-1 text-xs text-neutral-500">Current: {order.assignment_designer_name}</p>
-                    ) : null}
+                    )}
+                    {assignErrorByOrder[order.id] && (
+                      <p className="mt-1 text-xs text-red-600">{assignErrorByOrder[order.id]}</p>
+                    )}
                   </td>
                   <td className="px-2 py-3">
                     <Button size="sm" variant="outline" onClick={() => viewOrder(order.order_number)}>
@@ -238,6 +321,21 @@ export default function AdminOrdersPage() {
               ))}
             </tbody>
           </table>
+          {totalPages > 1 && (
+            <div className="mt-4 flex items-center justify-center gap-2">
+              <Button size="sm" variant="outline" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+                Previous
+              </Button>
+              <span className="text-sm text-neutral-600">
+                Page {page + 1} of {totalPages}
+              </span>
+              <Button size="sm" variant="outline" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>
+                Next
+              </Button>
+            </div>
+          )}
+            </>
+          )}
         </CardContent>
       </Card>
 

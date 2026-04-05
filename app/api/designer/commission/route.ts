@@ -17,9 +17,9 @@ export async function GET(request: NextRequest) {
       db,
       `SELECT COALESCE(SUM(oi.quantity), 0) as total_players
        FROM designer_assignments da
-       INNER JOIN orders o ON o.id = da.order_id AND o.status = 'delivered'
+       INNER JOIN orders o ON o.id = da.order_id
        INNER JOIN order_items oi ON oi.order_id = o.id
-       WHERE da.designer_user_id = ?`,
+       WHERE da.designer_user_id = ? AND da.status = 'completed'`,
       [session.sub]
     );
 

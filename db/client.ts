@@ -8,6 +8,7 @@ export interface WorkerEnv {
   R2_PUBLIC_BASE_URL?: string;
   REALTIME_API_URL?: string;
   REALTIME_API_TOKEN?: string;
+  SEED_KEY?: string;
 }
 
 export function getDb(env: WorkerEnv): D1Database {

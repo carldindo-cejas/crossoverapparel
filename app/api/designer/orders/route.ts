@@ -7,8 +7,8 @@ import { listActiveOrders } from "@/services/designer.service";
 export async function GET(request: NextRequest) {
   try {
     const env = getWorkerEnv();
-    await requireAuth(request, env.AUTH_SECRET, ["designer"]);
-    const orders = await listActiveOrders(env);
+    const session = await requireAuth(request, env.AUTH_SECRET, ["designer"]);
+    const orders = await listActiveOrders(env, session.sub);
     return ok(orders);
   } catch (error) {
     return fail(error);

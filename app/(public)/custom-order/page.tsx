@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { AnimatedPage } from "@/components/site/animated-page";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { LightningPayment } from "@/components/lightning-payment";
 import { type ApiEnvelope, type Product, type Category } from "@/lib/types";
 import { useApi } from "@/hooks/use-api";
 import { formatCurrency } from "@/lib/format";
@@ -127,11 +128,6 @@ function CustomOrderContent() {
   const [orderNumber, setOrderNumber] = useState<string | null>(null);
   const [orderSummary, setOrderSummary] = useState<OrderSummary | null>(null);
 
-  const activeProducts = useMemo(
-    () => (products || []).filter((p) => p.status === "active"),
-    [products]
-  );
-
   // Map category name → product type
   function categoryToProductType(categoryName: string | null | undefined): string {
     if (!categoryName) return "";
@@ -160,22 +156,6 @@ function CustomOrderContent() {
       }
     }
   }, [searchParams, products, categories]);
-
-  // When product selection changes, auto-assign product type from category
-  function handleProductChange(productId: string) {
-    updateField("productId", productId);
-    if (productId) {
-      const product = (products || []).find((p) => p.id === Number(productId));
-      if (product) {
-        const cat = (categories || []).find((c) => c.id === product.category_id);
-        const autoType = categoryToProductType(cat?.name);
-        if (autoType) updateField("productType", autoType);
-        setFromCollection(true);
-      }
-    } else {
-      setFromCollection(false);
-    }
-  }
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -250,7 +230,7 @@ function CustomOrderContent() {
       const customerName = form.name.trim();
       const segments = customerName.split(" ");
       const firstName = segments[0] || customerName;
-      const lastName = segments.slice(1).join(" ") || "Customer";
+      const lastName = segments.slice(1).join(" ") || "-Custom Order";
 
       const playerListValue = sortedPlayers
         .map((p) => `${p.surname} #${p.number} (${p.size})`)
@@ -316,6 +296,14 @@ function CustomOrderContent() {
 
       const orderId = orderResult.data.orderId;
       const createdOrderNumber = orderResult.data.orderNumber;
+
+      // Persist phone so order-summary / receipt / track-order can verify with the API
+      try {
+        sessionStorage.setItem(
+          `ca_order_${createdOrderNumber}`,
+          JSON.stringify({ phone: form.phone.trim() })
+        );
+      } catch { /* sessionStorage unavailable */ }
 
       // Upload all files with descriptive labels
       const LABEL_MAP: Record<string, string> = {
@@ -494,6 +482,14 @@ function CustomOrderContent() {
                   </Button>
                 </Link>
               </div>
+
+              {orderSummary.paymentMethod === "Pay with Bitcoin Lightning" && (
+                <LightningPayment
+                  orderNumber={orderSummary.orderNumber}
+                  totalCents={orderSummary.totalCents}
+                  phone={orderSummary.phone}
+                />
+              )}
             </CardContent>
           </Card>
         )}
@@ -524,24 +520,6 @@ function CustomOrderContent() {
                     required
                   />
                 </div>
-              </div>
-
-              {/* Product Selection */}
-              <div className="space-y-2">
-                <Label htmlFor="product">Product {fromCollection && "*"}</Label>
-                <select
-                  id="product"
-                  className="flex h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm"
-                  value={form.productId}
-                  onChange={(e) => handleProductChange(e.target.value)}
-                >
-                  <option value="">Select product (optional for custom)</option>
-                  {activeProducts.map((product) => (
-                    <option value={product.id} key={product.id}>
-                      {product.name}
-                    </option>
-                  ))}
-                </select>
               </div>
 
               {/* Photo Attachment */}
@@ -638,6 +616,14 @@ function CustomOrderContent() {
                   onChange={(e) => updateField("teamName", e.target.value)}
                   required
                 />
+              </div>
+
+              {/* Quantity */}
+              <div className="space-y-2">
+                <Label>Quantity</Label>
+                <div className="flex h-10 w-full items-center rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-sm text-neutral-700">
+                  {players.length} {players.length === 1 ? "player" : "players"}
+                </div>
               </div>
 
               {/* Player List */}
@@ -923,37 +909,46 @@ function MapLoader({
   lng: string;
   onPick: (lat: number, lng: number) => void;
 }) {
-  const initialized = useCallback(
-    (container: HTMLDivElement | null) => {
-      if (!container || (container as any).__leaflet) return;
-      (container as any).__leaflet = true;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
 
-      const defaultLat = lat ? Number(lat) : 9.3068;
-      const defaultLng = lng ? Number(lng) : 123.8854;
+  useEffect(() => {
+    if (!containerRef.current) return;
 
-      // Load Leaflet CSS
-      if (!document.getElementById("leaflet-css")) {
-        const link = document.createElement("link");
-        link.id = "leaflet-css";
-        link.rel = "stylesheet";
-        link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-        document.head.appendChild(link);
-      }
+    // Only initialize map once
+    if (mapRef.current) return;
 
-      const script = document.createElement("script");
-      script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-      script.onload = () => {
+    const defaultLat = lat ? Number(lat) : 9.3068;
+    const defaultLng = lng ? Number(lng) : 123.8854;
+
+    // Load Leaflet CSS
+    if (!document.getElementById("leaflet-css")) {
+      const link = document.createElement("link");
+      link.id = "leaflet-css";
+      link.rel = "stylesheet";
+      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(link);
+    }
+
+    // Load Leaflet JS
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    script.onload = () => {
+      try {
         const L = (window as any).L;
-        const map = L.map(container).setView([defaultLat, defaultLng], 13);
+        if (!L || !containerRef.current) return;
+
+        const map = L.map(containerRef.current).setView([defaultLat, defaultLng], 13);
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: "&copy; OpenStreetMap contributors",
         }).addTo(map);
 
-        let marker: any = null;
+        mapRef.current = map;
 
         function placeMarker(latlng: any) {
-          if (marker) marker.setLatLng(latlng);
-          else marker = L.marker(latlng).addTo(map);
+          if (markerRef.current) markerRef.current.setLatLng(latlng);
+          else markerRef.current = L.marker(latlng).addTo(map);
           onPick(latlng.lat, latlng.lng);
         }
 
@@ -962,12 +957,26 @@ function MapLoader({
         if (lat && lng) {
           placeMarker({ lat: Number(lat), lng: Number(lng) });
         }
-      };
-      document.body.appendChild(script);
-    },
+      } catch (error) {
+        console.error("Map initialization error:", error);
+      }
+    };
+    script.onerror = () => console.error("Failed to load Leaflet library");
+    document.body.appendChild(script);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
+  }, []);
 
-  return <div ref={initialized} id="map-container" className="h-64 w-full" />;
+  // Update marker when coordinates change externally
+  useEffect(() => {
+    if (mapRef.current && lat && lng) {
+      const newLat = Number(lat);
+      const newLng = Number(lng);
+      if (markerRef.current) {
+        markerRef.current.setLatLng([newLat, newLng]);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lat, lng]);
+
+  return <div ref={containerRef} id="map-container" className="h-64 w-full rounded-lg border border-neutral-300" />
 }

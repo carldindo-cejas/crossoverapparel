@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getWorkerEnv } from "@/lib/env";
 import { AppError } from "@/lib/errors";
 import { fail } from "@/lib/api";
+import { requireAuth } from "@/lib/auth/guard";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ key: string[] }> }
 ) {
   try {
@@ -16,6 +17,10 @@ export async function GET(
     }
 
     const env = getWorkerEnv();
+
+    // Require authentication — only owner, designer, or customer can access order files
+    await requireAuth(request, env.AUTH_SECRET, ["owner", "designer", "customer"]);
+
     const bucket = env.ORDER_FILES;
 
     if (!bucket) {
@@ -30,7 +35,7 @@ export async function GET(
 
     const headers = new Headers();
     headers.set("Content-Type", object.httpMetadata?.contentType || "application/octet-stream");
-    headers.set("Cache-Control", "public, max-age=86400");
+    headers.set("Cache-Control", "private, no-store");
 
     // Extract filename from key
     const fileName = objectKey.split("/").pop() || "download";

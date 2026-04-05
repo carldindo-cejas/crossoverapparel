@@ -10,12 +10,13 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as { seedKey?: string };
     const seedKey = body.seedKey;
+    const env = getWorkerEnv();
 
-    if (seedKey !== "crossover-seed-2024") {
+    // Seed key must match a secret stored in Cloudflare (wrangler secret put SEED_KEY)
+    const expectedSeedKey = env.SEED_KEY;
+    if (!expectedSeedKey || seedKey !== expectedSeedKey) {
       return ok({ message: "Invalid seed key" }, 403);
     }
-
-    const env = getWorkerEnv();
     const db = getDb(env);
     steps.push("got db");
 
@@ -37,6 +38,27 @@ export async function POST(request: NextRequest) {
       if (!(await hasColumn("users", col))) {
         await sqlRun(db, sql, []);
         steps.push("added users." + col);
+      }
+    }
+
+    // ── Migrate orders table ──────────────────────────────────────
+    const orderCols: [string, string][] = [
+      ["quantity", "ALTER TABLE orders ADD COLUMN quantity INTEGER NOT NULL DEFAULT 0"],
+    ];
+    async function tableExists(name: string) {
+      const row = await sqlFirst<{ cnt: number }>(
+        db,
+        "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=?",
+        [name]
+      );
+      return (row?.cnt ?? 0) > 0;
+    }
+    if (await tableExists("orders")) {
+      for (const [col, sql] of orderCols) {
+        if (!(await hasColumn("orders", col))) {
+          await sqlRun(db, sql, []);
+          steps.push("added orders." + col);
+        }
       }
     }
 
@@ -126,6 +148,7 @@ export async function POST(request: NextRequest) {
         discount_cents INTEGER NOT NULL DEFAULT 0,
         total_cents INTEGER NOT NULL DEFAULT 0,
         currency TEXT NOT NULL DEFAULT 'PHP',
+        quantity INTEGER NOT NULL DEFAULT 0,
         placed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         fulfilled_at TEXT,
         cancelled_at TEXT,
@@ -180,7 +203,8 @@ export async function POST(request: NextRequest) {
         notes TEXT,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+        FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+        UNIQUE (order_id, designer_user_id)
       )`,
       `CREATE TABLE IF NOT EXISTS order_status_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -227,6 +251,13 @@ export async function POST(request: NextRequest) {
         is_custom_order INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+      )`,
+      `CREATE TABLE IF NOT EXISTS payment_methods (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        is_available INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`
     ];
 
@@ -255,12 +286,13 @@ export async function POST(request: NextRequest) {
     const passwordHash = await hashPassword("admin121002");
     steps.push("hashed password");
 
-    // Adapt INSERT to match actual table structure (id is INTEGER, has name+salt columns)
+    // Adapt INSERT to match actual table structure (no salt/name columns)
+    const ownerId = crypto.randomUUID();
     await sqlRun(
       db,
-      `INSERT INTO users (email, password_hash, salt, name, full_name, role, is_active)
-       VALUES (?, ?, '', 'admin', 'admin', 'owner', 1)`,
-      ["admin@crossover-apparel.com", passwordHash]
+      `INSERT INTO users (id, email, password_hash, full_name, role, is_active)
+       VALUES (?, ?, ?, 'admin', 'owner', 1)`,
+      [ownerId, "admin@crossover-apparel.com", passwordHash]
     );
     steps.push("inserted owner");
 
@@ -272,6 +304,15 @@ export async function POST(request: NextRequest) {
       await sqlRun(db, "INSERT INTO categories (name, slug, is_active) VALUES ('Polo Shirts', 'polo-shirts', 1)", []);
       await sqlRun(db, "INSERT INTO categories (name, slug, is_active) VALUES ('Warmers', 'warmers', 1)", []);
       steps.push("seeded categories");
+    }
+
+    // ── Seed default payment methods ──────────────────────────────
+    const pmCount = await sqlFirst<{ cnt: number }>(db, "SELECT COUNT(*) as cnt FROM payment_methods", []);
+    if (!pmCount || pmCount.cnt === 0) {
+      await sqlRun(db, "INSERT INTO payment_methods (name, is_available) VALUES ('Cash on Delivery', 1)", []);
+      await sqlRun(db, "INSERT INTO payment_methods (name, is_available) VALUES ('Instapay', 0)", []);
+      await sqlRun(db, "INSERT INTO payment_methods (name, is_available) VALUES ('Bank Transfer', 0)", []);
+      steps.push("seeded payment_methods");
     }
 
     return ok({ message: "Owner account created", steps });

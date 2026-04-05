@@ -34,12 +34,12 @@ const createOrderSchema = z.object({
   items: z.array(orderItemSchema).min(1),
   shippingCents: z.number().int().min(0).default(0),
   taxCents: z.number().int().min(0).default(0),
-  discountCents: z.number().int().min(0).default(0),
+  discountCents: z.number().int().min(0).max(1_000_000_00).default(0), // max ₱1,000,000
   notes: z.string().optional()
 });
 
 const assignDesignerSchema = z.object({
-  designerUserId: z.string().uuid(),
+  designerUserId: z.string().min(1),
   dueAt: z.string().datetime().optional(),
   notes: z.string().optional()
 });
@@ -75,10 +75,13 @@ type CreateOrderInput = z.infer<typeof createOrderSchema>;
 
 function createOrderNumber() {
   const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const random = Math.floor(Math.random() * 100000)
-    .toString()
-    .padStart(5, "0");
-  return `CO-${stamp}-${random}`;
+  const bytes = crypto.getRandomValues(new Uint8Array(5));
+  const hex = Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 8)
+    .toUpperCase();
+  return `CO-${stamp}-${hex}`;
 }
 
 export function parseCreateOrderInput(rawBody: unknown): CreateOrderInput {
@@ -132,10 +135,12 @@ export async function createOrder(env: WorkerEnv, rawBody: unknown) {
     );
   }
 
+  const totalQuantity = input.items.reduce((sum, item) => sum + item.quantity, 0);
+
   await sqlRun(
     db,
-    `INSERT INTO orders (id, order_number, customer_id, status, payment_status, subtotal_cents, tax_cents, shipping_cents, discount_cents, total_cents, notes)
-     VALUES (?, ?, ?, 'pending', 'unpaid', 0, ?, ?, ?, 0, ?)`,
+    `INSERT INTO orders (id, order_number, customer_id, status, payment_status, subtotal_cents, tax_cents, shipping_cents, discount_cents, total_cents, currency, quantity, notes)
+     VALUES (?, ?, ?, 'pending', 'unpaid', 0, ?, ?, ?, 0, 'PHP', ?, ?)`,
     [
       orderId,
       orderNumber,
@@ -143,6 +148,7 @@ export async function createOrder(env: WorkerEnv, rawBody: unknown) {
       input.taxCents,
       input.shippingCents,
       input.discountCents,
+      totalQuantity,
       input.notes ?? null
     ]
   );
@@ -250,7 +256,11 @@ export async function createOrder(env: WorkerEnv, rawBody: unknown) {
   };
 }
 
-export async function getOrderByNumber(env: WorkerEnv, orderNumber: string) {
+export async function getOrderByNumber(
+  env: WorkerEnv,
+  orderNumber: string,
+  customerPhone?: string | null
+) {
   const db = getDb(env);
 
   const order = await sqlFirst<{
@@ -267,6 +277,7 @@ export async function getOrderByNumber(env: WorkerEnv, orderNumber: string) {
     notes: string | null;
     customer_email: string;
     customer_name: string;
+    customer_phone: string | null;
   }>(
     db,
     `SELECT
@@ -282,7 +293,8 @@ export async function getOrderByNumber(env: WorkerEnv, orderNumber: string) {
        o.placed_at,
        o.notes,
        c.email as customer_email,
-       (c.first_name || ' ' || c.last_name) as customer_name
+       (c.first_name || ' ' || c.last_name) as customer_name,
+       c.phone as customer_phone
      FROM orders o
      INNER JOIN customers c ON c.id = o.customer_id
      WHERE o.order_number = ?
@@ -294,27 +306,57 @@ export async function getOrderByNumber(env: WorkerEnv, orderNumber: string) {
     throw new AppError("Order not found", 404, "ORDER_NOT_FOUND");
   }
 
-  const items = await sqlAll(
-    db,
-    `SELECT id, product_id, variant_id, product_name_snapshot, variant_title_snapshot, quantity, unit_price_cents, line_total_cents
-     FROM order_items
-     WHERE order_id = ?`,
-    [order.id]
-  );
+  // Verify caller phone for guest access (same error message to prevent enumeration)
+  if (customerPhone !== undefined && customerPhone !== null) {
+    const normalize = (p: string) => p.replace(/\D/g, "");
+    const stored = normalize(order.customer_phone ?? "");
+    if (!stored || normalize(customerPhone) !== stored) {
+      throw new AppError("Order not found", 404, "ORDER_NOT_FOUND");
+    }
+  }
 
-  const files = await sqlAll(
-    db,
-    `SELECT id, r2_key, file_name, mime_type, size_bytes, created_at
-     FROM order_files
-     WHERE order_id = ?
-     ORDER BY created_at DESC`,
-    [order.id]
-  );
+  const { customer_phone: _cp, ...safeOrder } = order;
+
+  const [items, files, customizations, history] = await Promise.all([
+    sqlAll(
+      db,
+      `SELECT id, product_id, variant_id, product_name_snapshot, variant_title_snapshot, quantity, unit_price_cents, line_total_cents
+       FROM order_items
+       WHERE order_id = ?`,
+      [order.id]
+    ),
+    sqlAll(
+      db,
+      `SELECT id, r2_key, file_name, mime_type, size_bytes, created_at
+       FROM order_files
+       WHERE order_id = ?
+       ORDER BY created_at DESC`,
+      [order.id]
+    ),
+    sqlAll(
+      db,
+      `SELECT oc.id, oc.order_item_id, oc.customization_type, oc.field_name, oc.field_value, oc.additional_cost_cents
+       FROM order_customizations oc
+       INNER JOIN order_items oi ON oi.id = oc.order_item_id
+       WHERE oi.order_id = ?`,
+      [order.id]
+    ),
+    sqlAll(
+      db,
+      `SELECT id, previous_status, new_status, reason, changed_at
+       FROM order_status_logs
+       WHERE order_id = ?
+       ORDER BY changed_at ASC`,
+      [order.id]
+    ),
+  ]);
 
   return {
-    ...order,
+    ...safeOrder,
     items,
-    files
+    files,
+    customizations,
+    history,
   };
 }
 
@@ -367,6 +409,21 @@ export async function assignDesigner(
 
   if (!order) {
     throw new AppError("Order not found", 404, "ORDER_NOT_FOUND");
+  }
+
+  // Prevent re-assignment: if an assignment already exists for this order, block it
+  const existingAssignment = await sqlFirst<{ designer_user_id: string }>(
+    db,
+    "SELECT designer_user_id FROM designer_assignments WHERE order_id = ? LIMIT 1",
+    [orderId]
+  );
+
+  if (existingAssignment) {
+    throw new AppError(
+      "This order is already assigned to a designer and cannot be reassigned",
+      422,
+      "ALREADY_ASSIGNED"
+    );
   }
 
   const designer = await sqlFirst<{ id: string }>(
@@ -510,4 +567,130 @@ export async function addOrderNote(env: WorkerEnv, orderId: string, authorId: st
   });
 
   return { orderId, note: line };
+}
+
+export async function cancelOrderByCustomer(env: WorkerEnv, orderNumber: string, customerPhone: string) {
+  const db = getDb(env);
+
+  const order = await sqlFirst<{
+    id: string;
+    status: OrderStatus;
+    placed_at: string;
+    customer_phone: string | null;
+  }>(
+    db,
+    `SELECT o.id, o.status, o.placed_at, c.phone as customer_phone
+     FROM orders o
+     INNER JOIN customers c ON c.id = o.customer_id
+     WHERE o.order_number = ?
+     LIMIT 1`,
+    [orderNumber]
+  );
+
+  if (!order) {
+    throw new AppError("Order not found", 404, "ORDER_NOT_FOUND");
+  }
+
+  // Phone verification (same constant-time comparison as getOrderByNumber)
+  const normalize = (p: string) => p.replace(/\D/g, "");
+  const stored = normalize(order.customer_phone ?? "");
+  if (!stored || normalize(customerPhone) !== stored) {
+    throw new AppError("Order not found", 404, "ORDER_NOT_FOUND");
+  }
+
+  // Terminal states — cannot cancel
+  if (order.status !== "pending") {
+    throw new AppError(
+      "Orders can only be cancelled while they are pending",
+      422,
+      "CANNOT_CANCEL"
+    );
+  }
+
+  await sqlRun(
+    db,
+    "UPDATE orders SET status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    [order.id]
+  );
+
+  await sqlRun(
+    db,
+    `INSERT INTO order_status_logs (order_id, previous_status, new_status, reason)
+     VALUES (?, ?, 'cancelled', 'Cancelled by customer')`,
+    [order.id, order.status]
+  );
+
+  await publishRealtimeEvent(env, {
+    type: "order.status.updated",
+    payload: {
+      orderId: order.id,
+      orderNumber,
+      previousStatus: order.status,
+      newStatus: "cancelled"
+    }
+  });
+
+  await publishRealtimeEvent(env, {
+    type: "dashboard.updated",
+    payload: {
+      source: "order-cancelled",
+      orderId: order.id
+    }
+  });
+
+  return { cancelled: true, orderNumber };
+}
+
+export async function confirmPaymentByCustomer(env: WorkerEnv, orderNumber: string) {
+  const db = getDb(env);
+
+  const order = await sqlFirst<{
+    id: string;
+    payment_status: string;
+    status: string;
+  }>(
+    db,
+    `SELECT id, payment_status, status
+     FROM orders
+     WHERE order_number = ?
+     LIMIT 1`,
+    [orderNumber]
+  );
+
+  if (!order) {
+    throw new AppError("Order not found", 404, "ORDER_NOT_FOUND");
+  }
+
+  if (order.payment_status === "paid") {
+    return { orderNumber, paymentStatus: "paid", alreadyPaid: true };
+  }
+
+  if (order.status === "cancelled" || order.status === "refunded") {
+    throw new AppError("Cannot update payment for a cancelled or refunded order", 422, "ORDER_CLOSED");
+  }
+
+  await sqlRun(
+    db,
+    "UPDATE orders SET payment_status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    [order.id]
+  );
+
+  await publishRealtimeEvent(env, {
+    type: "order.status.updated",
+    payload: {
+      orderId: order.id,
+      orderNumber,
+      paymentStatus: "paid"
+    }
+  });
+
+  await publishRealtimeEvent(env, {
+    type: "dashboard.updated",
+    payload: {
+      source: "payment-confirmed",
+      orderId: order.id
+    }
+  });
+
+  return { orderNumber, paymentStatus: "paid", alreadyPaid: false };
 }

@@ -73,7 +73,20 @@ export async function verifySessionToken(token: string, secret: string): Promise
   const content = `${header}.${payload}`;
   const expectedSignature = await sign(content, secret);
 
-  if (expectedSignature !== signature) {
+  // Constant-time comparison to prevent timing attacks
+  const sigBytes = base64UrlDecode(signature);
+  const expectedBytes = base64UrlDecode(expectedSignature);
+
+  if (sigBytes.length !== expectedBytes.length) {
+    throw new AppError("Invalid token signature", 401, "INVALID_TOKEN");
+  }
+
+  let mismatch = 0;
+  for (let i = 0; i < sigBytes.length; i++) {
+    mismatch |= sigBytes[i] ^ expectedBytes[i];
+  }
+
+  if (mismatch !== 0) {
     throw new AppError("Invalid token signature", 401, "INVALID_TOKEN");
   }
 

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import { Product } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
@@ -33,10 +34,11 @@ export function ProductCard({ product }: ProductCardProps) {
         <Link href={`/product-order/${product.id}` as any}>
           <div className="relative aspect-[4/5] bg-neutral-100">
             {product.image_url ? (
-              <img
+              <Image
                 src={`/api/products/images/${product.image_url}`}
                 alt={product.name}
-                className="h-full w-full object-cover"
+                fill
+                className="object-cover"
               />
             ) : (
               <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_20%_20%,#f5f5f5,transparent_50%),radial-gradient(circle_at_80%_80%,#ececec,transparent_45%),linear-gradient(120deg,#f8f8f8,#eaeaea)]">

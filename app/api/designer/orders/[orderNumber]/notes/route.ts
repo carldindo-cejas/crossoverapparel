@@ -3,7 +3,7 @@ import { ok, fail } from "@/lib/api";
 import { AppError } from "@/lib/errors";
 import { getWorkerEnv } from "@/lib/env";
 import { requireAuth } from "@/lib/auth/guard";
-import { getOrderIdByNumber } from "@/services/designer.service";
+import { getAssignedOrderIdByNumber } from "@/services/designer.service";
 import { addOrderNote } from "@/services/order.service";
 
 export async function PATCH(
@@ -19,7 +19,7 @@ export async function PATCH(
       throw new AppError("Invalid order number", 422, "INVALID_ORDER_NUMBER");
     }
 
-    const orderId = await getOrderIdByNumber(env, orderNumber);
+    const orderId = await getAssignedOrderIdByNumber(env, session.sub, orderNumber);
     const body = await request.json();
     const result = await addOrderNote(env, orderId, session.sub, body);
     return ok(result);

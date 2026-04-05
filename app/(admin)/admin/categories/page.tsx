@@ -10,9 +10,10 @@ export default function AdminCategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
+  const [error, setError] = useState("");
 
   async function load() {
-    const res = await fetch("/api/owner/categories", { cache: "no-store" });
+    const res = await fetch("/api/admin/categories", { cache: "no-store" });
     const payload = (await res.json()) as ApiEnvelope<Category[]>;
     if (res.ok && payload.success) setCategories(payload.data);
   }
@@ -22,18 +23,24 @@ export default function AdminCategoriesPage() {
   }, []);
 
   async function createCategory() {
-    await fetch("/api/owner/categories", {
+    setError("");
+    const res = await fetch("/api/admin/categories", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, slug })
     });
+    const payload = (await res.json()) as { success: boolean; error?: { message: string } };
+    if (!res.ok || !payload.success) {
+      setError(payload.error?.message || "Failed to create category");
+      return;
+    }
     setName("");
     setSlug("");
     await load();
   }
 
   async function removeCategory(id: number) {
-    await fetch(`/api/owner/categories/${id}`, { method: "DELETE" });
+    await fetch(`/api/admin/categories/${id}`, { method: "DELETE" });
     await load();
   }
 
@@ -41,7 +48,7 @@ export default function AdminCategoriesPage() {
     const nameNext = window.prompt("Update category name", currentName);
     if (!nameNext || nameNext.trim() === "") return;
 
-    await fetch(`/api/owner/categories/${id}`, {
+    await fetch(`/api/admin/categories/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: nameNext.trim() })
@@ -59,9 +66,10 @@ export default function AdminCategoriesPage() {
           <CardTitle>Create Category</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">
-          <Input placeholder="Category name" value={name} onChange={(e) => setName(e.target.value)} className="max-w-xs" />
-          <Input placeholder="Slug" value={slug} onChange={(e) => setSlug(e.target.value)} className="max-w-xs" />
-          <Button onClick={createCategory}>Create</Button>
+          {error && <div className="w-full rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
+          <Input placeholder="Category name" value={name} onChange={(e) => setName(e.target.value)} className="max-w-xs" maxLength={100} />
+          <Input placeholder="Slug" value={slug} onChange={(e) => setSlug(e.target.value)} className="max-w-xs" maxLength={100} />
+          <Button onClick={createCategory} disabled={!name.trim() || !slug.trim()}>Create</Button>
         </CardContent>
       </Card>
 

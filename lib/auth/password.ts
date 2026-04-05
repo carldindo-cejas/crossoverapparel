@@ -3,12 +3,29 @@ import { AppError } from "@/lib/errors";
 const encoder = new TextEncoder();
 const ITERATIONS = 100000;
 
-function bytesToBase64(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString("base64");
+/* ── Hex encoding (D1-safe: only [0-9a-f]) ── */
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+  }
+  return bytes;
+}
+
+/* ── Legacy base64 decoding (for passwords hashed before hex migration) ── */
 function base64ToBytes(value: string): Uint8Array {
-  return new Uint8Array(Buffer.from(value, "base64"));
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 async function pbkdf2(password: string, salt: Uint8Array): Promise<Uint8Array> {
@@ -42,7 +59,9 @@ export async function hashPassword(password: string): Promise<string> {
 
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const digest = await pbkdf2(password, salt);
-  return `pbkdf2$${ITERATIONS}$${bytesToBase64(salt)}$${bytesToBase64(digest)}`;
+  // Use hex encoding with "pbkdf2-v2" tag for D1 compatibility
+  const hash = `pbkdf2-v2$${ITERATIONS}$${bytesToHex(salt)}$${bytesToHex(digest)}`;
+  return hash;
 }
 
 function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
@@ -59,13 +78,23 @@ function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
 export async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
   const parts = storedHash.split("$");
 
-  if (parts.length !== 4 || parts[0] !== "pbkdf2") {
+  let salt: Uint8Array;
+  let expected: Uint8Array;
+  let iterations: number;
+
+  if (parts.length === 4 && parts[0] === "pbkdf2-v2") {
+    // New hex-encoded format: pbkdf2-v2$iterations$hexSalt$hexDigest
+    iterations = Number(parts[1]);
+    salt = hexToBytes(parts[2]);
+    expected = hexToBytes(parts[3]);
+  } else if (parts.length === 4 && parts[0] === "pbkdf2") {
+    // Legacy base64-encoded format: pbkdf2$iterations$b64Salt$b64Digest
+    iterations = Number(parts[1]);
+    salt = base64ToBytes(parts[2]);
+    expected = base64ToBytes(parts[3]);
+  } else {
     return false;
   }
-
-  const iterations = Number(parts[1]);
-  const salt = base64ToBytes(parts[2]);
-  const expected = base64ToBytes(parts[3]);
 
   if (!Number.isFinite(iterations) || iterations <= 0) {
     return false;

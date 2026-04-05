@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useMemo, useRef, useState, useEffect } from "react";
 import { motion } from "framer-motion";
@@ -22,7 +23,7 @@ export function SiteHeader() {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const loginActive =
     pathname === "/login" ||
-    pathname === "/owner/login" ||
+    pathname === "/admin/login" ||
     pathname === "/designer/login";
 
   const { data: products } = useApi<Product[]>("/api/products");
@@ -163,7 +164,7 @@ export function SiteHeader() {
                       className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-neutral-50"
                     >
                       {p.image_url ? (
-                        <img src={`/api/products/images/${p.image_url}`} alt="" className="h-10 w-10 rounded-lg object-cover" />
+                        <Image src={`/api/products/images/${p.image_url}`} alt={p.name} width={40} height={40} className="rounded-lg object-cover" />
                       ) : (
                         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-100 text-sm text-neutral-300">📷</div>
                       )}

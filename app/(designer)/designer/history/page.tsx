@@ -14,6 +14,7 @@ type OrderRow = {
   currency: string;
   placed_at: string;
   customer_name: string;
+  assignment_status: string;
 };
 
 export default function DesignerHistoryPage() {
@@ -24,7 +25,7 @@ export default function DesignerHistoryPage() {
       const response = await fetch("/api/designer/orders", { cache: "no-store" });
       const payload = (await response.json()) as ApiEnvelope<OrderRow[]>;
       if (response.ok && payload.success) {
-        setOrders(payload.data.filter((o) => o.status === "delivered"));
+        setOrders(payload.data.filter((o) => o.assignment_status === "completed"));
       }
     }
     load();

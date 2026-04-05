@@ -77,7 +77,8 @@ export async function getSalesHistory(env: WorkerEnv, rawRange: { from?: string;
        COUNT(*) as orders,
        COALESCE(SUM(total_cents), 0) as revenue_cents
      FROM orders
-     WHERE placed_at BETWEEN ? AND ?
+     WHERE status NOT IN ('cancelled', 'refunded')
+       AND placed_at BETWEEN ? AND ?
      GROUP BY DATE(placed_at)
      ORDER BY date ASC`,
     [from, to]

@@ -11,9 +11,14 @@ directory = ".open-next/assets"
 [vars]
 APP_NAME = "Crossover Apparel"
 APP_ENV = "production"
-AUTH_SECRET = "crossover-apparel-jwt-secret-2024-secure-key"
 REALTIME_API_URL = "https://crossover-apparel.cejascarldindo.workers.dev"
-REALTIME_API_TOKEN = "crossover_apparel_token"
+# R2_PUBLIC_BASE_URL = "https://your-r2-public-domain.com"
+
+# IMPORTANT: Do NOT put secrets in this file.
+# Run these commands to set secrets securely:
+#   wrangler secret put AUTH_SECRET
+#   wrangler secret put REALTIME_API_TOKEN
+#   wrangler secret put SEED_KEY
 
 [[d1_databases]]
 binding = "DB"

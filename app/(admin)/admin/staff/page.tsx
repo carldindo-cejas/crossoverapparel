@@ -126,18 +126,24 @@ export default function AdminStaffPage() {
               placeholder="Full name"
               value={form.fullName}
               onChange={(e) => setForm((prev) => ({ ...prev, fullName: e.target.value }))}
+              maxLength={100}
+              aria-label="Designer full name"
             />
             <Input
               type="email"
               placeholder="Designer email"
               value={form.email}
               onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
+              maxLength={254}
+              aria-label="Designer email"
             />
             <Input
               type="password"
               placeholder="Password (min 8 chars)"
               value={form.password}
               onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
+              maxLength={128}
+              aria-label="Designer password"
             />
             <Button onClick={createStaffUser} disabled={creating || !form.fullName || !form.email || form.password.length < 8}>
               {creating ? "Creating..." : "Create Designer"}

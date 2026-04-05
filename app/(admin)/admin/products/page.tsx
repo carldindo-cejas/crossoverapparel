@@ -28,6 +28,7 @@ export default function AdminProductsPage() {
   const createImageRef = useRef<HTMLInputElement>(null);
   const [createImage, setCreateImage] = useState<File | null>(null);
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
   const [form, setForm] = useState({
     sku: "",
     name: "",
@@ -70,6 +71,7 @@ export default function AdminProductsPage() {
 
   async function createProduct() {
     setCreating(true);
+    setCreateError("");
     try {
       const res = await fetch("/api/admin/products", {
         method: "POST",
@@ -89,8 +91,13 @@ export default function AdminProductsPage() {
 
       const payload = (await res.json()) as ApiEnvelope<{ id: number }>;
 
+      if (!res.ok || !payload.success) {
+        setCreateError((payload as { success: false; error?: { message?: string } }).error?.message || "Failed to create product");
+        return;
+      }
+
       // Upload image if selected
-      if (res.ok && payload.success && createImage && payload.data.id) {
+      if (payload.success && createImage && payload.data.id) {
         const fd = new FormData();
         fd.append("file", createImage);
         await fetch(`/api/admin/products/${payload.data.id}/image`, {
@@ -179,6 +186,7 @@ export default function AdminProductsPage() {
           <CardTitle>Add New Product</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {createError && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{createError}</div>}
           <div className="grid gap-3 md:grid-cols-3">
             <div className="space-y-1">
               <label className="text-xs font-medium text-neutral-500">SKU</label>

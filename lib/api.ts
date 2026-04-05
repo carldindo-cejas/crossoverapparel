@@ -1,21 +1,27 @@
 import { NextResponse } from "next/server";
-import { ZodError } from "zod";
 import { AppError, toAppError } from "@/lib/errors";
+
+function isZodError(error: unknown): error is { issues: unknown[] } {
+  return (
+    error instanceof Error &&
+    (error.constructor.name === "ZodError" || error.name === "ZodError")
+  );
+}
 
 export function ok<T>(data: T, status = 200) {
   return NextResponse.json({ success: true, data }, { status });
 }
 
 export function fail(error: unknown) {
-  if (error instanceof ZodError) {
+  if (isZodError(error)) {
     return NextResponse.json(
       {
         success: false,
         error: {
           code: "VALIDATION_ERROR",
           message: "Invalid request input",
-          issues: error.issues
-        }
+          issues: (error as { issues: unknown[] }).issues,
+        },
       },
       { status: 422 }
     );
@@ -27,8 +33,8 @@ export function fail(error: unknown) {
       success: false,
       error: {
         code: appError.code,
-        message: appError.message
-      }
+        message: appError.message,
+      },
     },
     { status: appError.statusCode }
   );

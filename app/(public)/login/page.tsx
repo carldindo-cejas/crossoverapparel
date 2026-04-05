@@ -19,7 +19,7 @@ export default function LoginSelectorPage() {
               <p className="text-sm text-neutral-600">Manage dashboard, orders, products, categories, and designers.</p>
             </CardHeader>
             <CardContent>
-              <Link href="/owner/login" className="block">
+              <Link href="/admin/login" className="block">
                 <Button className="w-full">Continue as Owner</Button>
               </Link>
             </CardContent>

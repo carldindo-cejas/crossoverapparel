@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
+import { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { AnimatedPage } from "@/components/site/animated-page";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { LightningPayment } from "@/components/lightning-payment";
 import { type ApiEnvelope, type Product, type Category } from "@/lib/types";
 import { useApi } from "@/hooks/use-api";
 import { formatCurrency } from "@/lib/format";
@@ -153,7 +155,7 @@ export default function ProductOrderPage() {
   );
 
   /* ── Pricing ── */
-  const unitPriceCents = PRICE_MAP[productType] || 0;
+  const unitPriceCents = PRICE_MAP[productType] ?? product?.base_price_cents ?? 0;
   const totalPlayers = players.length;
   const totalCents = unitPriceCents * totalPlayers;
 
@@ -220,7 +222,7 @@ export default function ProductOrderPage() {
             quantity: totalPlayers,
             customizations: [
               { customizationType: "text" as const, fieldName: "teamName", fieldValue: form.teamName, additionalCostCents: 0 },
-              { customizationType: "text" as const, fieldName: "productType", fieldValue: productType, additionalCostCents: 0 },
+              { customizationType: "text" as const, fieldName: "productType", fieldValue: productType || product!.name, additionalCostCents: 0 },
               { customizationType: "text" as const, fieldName: "cuttingFront", fieldValue: form.cuttingFront, additionalCostCents: 0 },
               { customizationType: "text" as const, fieldName: "cuttingBack", fieldValue: form.cuttingBack, additionalCostCents: 0 },
               { customizationType: "text" as const, fieldName: "cuttingBelow", fieldValue: form.cuttingBelow, additionalCostCents: 0 },
@@ -255,6 +257,14 @@ export default function ProductOrderPage() {
 
       const orderId = orderResult.data.orderId;
       const createdOrderNumber = orderResult.data.orderNumber;
+
+      // Persist phone so order-summary / receipt / track-order can verify with the API
+      try {
+        sessionStorage.setItem(
+          `ca_order_${createdOrderNumber}`,
+          JSON.stringify({ phone: form.phone.trim() })
+        );
+      } catch { /* sessionStorage unavailable */ }
 
       // Upload logo files with descriptive labels
       const LABEL_MAP: Record<string, string> = {
@@ -313,7 +323,7 @@ export default function ProductOrderPage() {
       <AnimatedPage>
         <section className="mx-auto w-full max-w-4xl px-6 py-14 text-center">
           <h1 className="text-3xl font-semibold text-neutral-900">Product Not Found</h1>
-          <p className="mt-3 text-neutral-600">The product you're looking for doesn't exist or is no longer available.</p>
+          <p className="mt-3 text-neutral-600">The product you&apos;re looking for doesn&apos;t exist or is no longer available.</p>
           <Link href="/"><Button className="mt-6">Back to Home</Button></Link>
         </section>
       </AnimatedPage>
@@ -329,10 +339,11 @@ export default function ProductOrderPage() {
           <div className="mb-8 overflow-hidden rounded-2xl border border-neutral-200 bg-white md:flex">
             <div className="relative aspect-[4/5] w-full bg-neutral-100 md:w-80">
               {product.image_url ? (
-                <img
+                <Image
                   src={`/api/products/images/${product.image_url}`}
                   alt={product.name}
-                  className="h-full w-full object-cover"
+                  fill
+                  className="object-cover"
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-100 to-neutral-200">
@@ -462,6 +473,14 @@ export default function ProductOrderPage() {
                   <Button variant="outline" size="sm">Track Order</Button>
                 </Link>
               </div>
+
+              {orderSummary.paymentMethod === "Pay with Bitcoin Lightning" && (
+                <LightningPayment
+                  orderNumber={orderSummary.orderNumber}
+                  totalCents={orderSummary.totalCents}
+                  phone={orderSummary.phone}
+                />
+              )}
             </CardContent>
           </Card>
         )}
@@ -519,6 +538,14 @@ export default function ProductOrderPage() {
                 <div className="space-y-2">
                   <Label htmlFor="teamName">Team Name *</Label>
                   <Input id="teamName" value={form.teamName} onChange={(e) => updateField("teamName", e.target.value)} required />
+                </div>
+
+                {/* Quantity */}
+                <div className="space-y-2">
+                  <Label>Quantity</Label>
+                  <div className="flex h-10 w-full items-center rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-sm text-neutral-700">
+                    {players.length} {players.length === 1 ? "player" : "players"}
+                  </div>
                 </div>
 
                 {/* Player List */}
@@ -680,36 +707,46 @@ export default function ProductOrderPage() {
 
 /* ── Leaflet map loader ── */
 function MapLoader({ lat, lng, onPick }: { lat: string; lng: string; onPick: (lat: number, lng: number) => void }) {
-  const initialized = useCallback(
-    (container: HTMLDivElement | null) => {
-      if (!container || (container as any).__leaflet) return;
-      (container as any).__leaflet = true;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
 
-      const defaultLat = lat ? Number(lat) : 9.3068;
-      const defaultLng = lng ? Number(lng) : 123.8854;
+  useEffect(() => {
+    if (!containerRef.current) return;
 
-      if (!document.getElementById("leaflet-css")) {
-        const link = document.createElement("link");
-        link.id = "leaflet-css";
-        link.rel = "stylesheet";
-        link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-        document.head.appendChild(link);
-      }
+    // Only initialize map once
+    if (mapRef.current) return;
 
-      const script = document.createElement("script");
-      script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-      script.onload = () => {
+    const defaultLat = lat ? Number(lat) : 9.3068;
+    const defaultLng = lng ? Number(lng) : 123.8854;
+
+    // Load Leaflet CSS
+    if (!document.getElementById("leaflet-css")) {
+      const link = document.createElement("link");
+      link.id = "leaflet-css";
+      link.rel = "stylesheet";
+      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(link);
+    }
+
+    // Load Leaflet JS
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    script.onload = () => {
+      try {
         const L = (window as any).L;
-        const map = L.map(container).setView([defaultLat, defaultLng], 13);
+        if (!L || !containerRef.current) return;
+
+        const map = L.map(containerRef.current).setView([defaultLat, defaultLng], 13);
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: "&copy; OpenStreetMap contributors",
         }).addTo(map);
 
-        let marker: any = null;
+        mapRef.current = map;
 
         function placeMarker(latlng: any) {
-          if (marker) marker.setLatLng(latlng);
-          else marker = L.marker(latlng).addTo(map);
+          if (markerRef.current) markerRef.current.setLatLng(latlng);
+          else markerRef.current = L.marker(latlng).addTo(map);
           onPick(latlng.lat, latlng.lng);
         }
 
@@ -718,12 +755,26 @@ function MapLoader({ lat, lng, onPick }: { lat: string; lng: string; onPick: (la
         if (lat && lng) {
           placeMarker({ lat: Number(lat), lng: Number(lng) });
         }
-      };
-      document.body.appendChild(script);
-    },
+      } catch (error) {
+        console.error("Map initialization error:", error);
+      }
+    };
+    script.onerror = () => console.error("Failed to load Leaflet library");
+    document.body.appendChild(script);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
+  }, []);
 
-  return <div ref={initialized} id="map-container" className="h-64 w-full" />;
+  // Update marker when coordinates change externally
+  useEffect(() => {
+    if (mapRef.current && lat && lng) {
+      const newLat = Number(lat);
+      const newLng = Number(lng);
+      if (markerRef.current) {
+        markerRef.current.setLatLng([newLat, newLng]);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lat, lng]);
+
+  return <div ref={containerRef} id="map-container" className="h-64 w-full rounded-lg border border-neutral-300" />
 }

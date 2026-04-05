@@ -19,20 +19,21 @@ type OrderRow = {
   placed_at: string;
   customer_name: string;
   customer_email: string;
+  assignment_status: string;
 };
 
-const NEW_STATUSES = ["pending", "confirmed"];
-const IN_PROGRESS_STATUSES = ["in_production", "ready_to_ship", "shipped"];
-const COMPLETE_STATUSES = ["delivered"];
+// Map assignment_status to designer-facing label
+const ASSIGNMENT_TO_DESIGNER: Record<string, string> = {
+  assigned: "received",
+  in_progress: "working",
+  completed: "done",
+};
 
-const DESIGNER_STATUSES = [
-  "pending",
-  "confirmed",
-  "in_production",
-  "ready_to_ship",
-  "shipped",
-  "delivered"
-];
+function getDesignerStatus(assignmentStatus: string): string {
+  return ASSIGNMENT_TO_DESIGNER[assignmentStatus] ?? "received";
+}
+
+const DESIGNER_STATUSES = ["received", "working", "done"] as const;
 
 export default function DesignerOrdersPage() {
   const [orders, setOrders] = useState<OrderRow[]>([]);
@@ -63,20 +64,27 @@ export default function DesignerOrdersPage() {
   useRealtime({
     role: "designer",
     onEvent: (event) => {
-      if (event.type === "order.status.updated") {
+      if (event.type === "order.status.updated" || event.type === "assignment.updated") {
         load();
         loadCommission();
       }
     }
   });
 
-  async function updateOrderStatus(orderNumber: string, status: string) {
+  async function updateOrderStatus(orderNumber: string, designerStatus: string) {
     const order = orders.find((o) => o.order_number === orderNumber);
-    const previousStatus = order?.status;
+    const previousAssignment = order?.assignment_status;
+
+    // Map designer status back to assignment status for optimistic UI
+    const designerToAssignment: Record<string, string> = {
+      received: "assigned",
+      working: "in_progress",
+      done: "completed",
+    };
 
     setStatusUpdatingByOrder((prev) => ({ ...prev, [orderNumber]: true }));
     setOrders((prev) =>
-      prev.map((o) => (o.order_number === orderNumber ? { ...o, status } : o))
+      prev.map((o) => (o.order_number === orderNumber ? { ...o, assignment_status: designerToAssignment[designerStatus] ?? o.assignment_status } : o))
     );
 
     const response = await fetch(
@@ -84,14 +92,14 @@ export default function DesignerOrdersPage() {
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status })
+        body: JSON.stringify({ status: designerStatus })
       }
     );
 
-    if (!response.ok && previousStatus) {
+    if (!response.ok && previousAssignment) {
       setOrders((prev) =>
         prev.map((o) =>
-          o.order_number === orderNumber ? { ...o, status: previousStatus } : o
+          o.order_number === orderNumber ? { ...o, assignment_status: previousAssignment } : o
         )
       );
     }
@@ -103,22 +111,19 @@ export default function DesignerOrdersPage() {
 
   const grouped = useMemo(
     () => ({
-      new: orders.filter((o) => NEW_STATUSES.includes(o.status)),
-      inProgress: orders.filter((o) => IN_PROGRESS_STATUSES.includes(o.status)),
-      complete: orders.filter((o) => COMPLETE_STATUSES.includes(o.status))
+      received: orders.filter((o) => getDesignerStatus(o.assignment_status) === "received"),
+      working: orders.filter((o) => getDesignerStatus(o.assignment_status) === "working"),
+      done: orders.filter((o) => getDesignerStatus(o.assignment_status) === "done"),
     }),
     [orders]
   );
 
-  function statusColor(status: string): string {
-    switch (status) {
-      case "pending":      return "bg-yellow-100 text-yellow-800";
-      case "confirmed":    return "bg-blue-100 text-blue-800";
-      case "in_production": return "bg-orange-100 text-orange-800";
-      case "ready_to_ship": return "bg-purple-100 text-purple-800";
-      case "shipped":      return "bg-indigo-100 text-indigo-800";
-      case "delivered":    return "bg-green-100 text-green-800";
-      default:             return "bg-neutral-100 text-neutral-800";
+  function designerStatusColor(ds: string): string {
+    switch (ds) {
+      case "received": return "bg-blue-100 text-blue-800";
+      case "working":  return "bg-orange-100 text-orange-800";
+      case "done":     return "bg-green-100 text-green-800";
+      default:         return "bg-neutral-100 text-neutral-800";
     }
   }
 
@@ -150,18 +155,18 @@ export default function DesignerOrdersPage() {
                 </td>
                 <td className="px-2 py-3">
                   <div className="flex flex-col gap-1.5">
-                    <span className={`inline-flex w-fit items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${statusColor(order.status)}`}>
-                      {order.status.replace(/_/g, " ")}
+                    <span className={`inline-flex w-fit items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${designerStatusColor(getDesignerStatus(order.assignment_status))}`}>
+                      {getDesignerStatus(order.assignment_status)}
                     </span>
                     <select
                       className="h-9 rounded-lg border border-neutral-300 px-2 text-sm"
-                      value={order.status}
-                      disabled={statusUpdatingByOrder[order.order_number] === true}
+                      value={getDesignerStatus(order.assignment_status)}
+                      disabled={statusUpdatingByOrder[order.order_number] === true || getDesignerStatus(order.assignment_status) === "done"}
                       onChange={(e) => updateOrderStatus(order.order_number, e.target.value)}
                     >
                       {DESIGNER_STATUSES.map((s) => (
                         <option key={s} value={s}>
-                          {s.replace(/_/g, " ")}
+                          {s.charAt(0).toUpperCase() + s.slice(1)}
                         </option>
                       ))}
                     </select>
@@ -189,26 +194,26 @@ export default function DesignerOrdersPage() {
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader>
-            <CardTitle>New</CardTitle>
+            <CardTitle>Received</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-semibold">{grouped.new.length}</p>
+            <p className="text-3xl font-semibold">{grouped.received.length}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>In Progress</CardTitle>
+            <CardTitle>Working</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-semibold">{grouped.inProgress.length}</p>
+            <p className="text-3xl font-semibold">{grouped.working.length}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Complete</CardTitle>
+            <CardTitle>Done</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-semibold">{grouped.complete.length}</p>
+            <p className="text-3xl font-semibold">{grouped.done.length}</p>
           </CardContent>
         </Card>
         <Card>
@@ -228,28 +233,28 @@ export default function DesignerOrdersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>New Orders</CardTitle>
+          <CardTitle>Received Orders</CardTitle>
         </CardHeader>
         <CardContent>
-          <OrderTable rows={grouped.new} />
+          <OrderTable rows={grouped.received} />
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>In Progress</CardTitle>
+          <CardTitle>Working</CardTitle>
         </CardHeader>
         <CardContent>
-          <OrderTable rows={grouped.inProgress} />
+          <OrderTable rows={grouped.working} />
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Complete</CardTitle>
+          <CardTitle>Done</CardTitle>
         </CardHeader>
         <CardContent>
-          <OrderTable rows={grouped.complete} />
+          <OrderTable rows={grouped.done} />
         </CardContent>
       </Card>
     </div>

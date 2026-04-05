@@ -147,6 +147,7 @@ export async function getProducts(env: WorkerEnv) {
        WHERE oi.product_id IS NOT NULL
        GROUP BY oi.product_id
      ) pr ON pr.product_id = p.id
+     WHERE p.status = 'active'
      ORDER BY p.created_at DESC`
   );
 }

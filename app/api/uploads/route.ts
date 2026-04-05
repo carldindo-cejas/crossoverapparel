@@ -26,12 +26,21 @@ export async function POST(request: NextRequest) {
       throw new AppError("orderItemId must be an integer", 422, "INVALID_ORDER_ITEM_ID");
     }
 
+    // Allow unauthenticated uploads when an orderId is provided (guest order file uploads)
     let uploadedBy: string | undefined;
-    try {
+    if (typeof orderId === "string" && orderId.trim() !== "") {
+      // Guest upload — orderId acts as the authorization scope
+      try {
+        const session = await requireAuth(request, env.AUTH_SECRET, ["owner", "designer", "customer"]);
+        uploadedBy = session.sub;
+      } catch {
+        // Guest customer — no auth token, upload is scoped to orderId
+        uploadedBy = undefined;
+      }
+    } else {
+      // No orderId — require authentication
       const session = await requireAuth(request, env.AUTH_SECRET, ["owner", "designer", "customer"]);
       uploadedBy = session.sub;
-    } catch {
-      uploadedBy = undefined;
     }
 
     const result = await uploadFileToR2(

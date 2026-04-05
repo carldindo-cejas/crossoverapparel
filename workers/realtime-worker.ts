@@ -1,6 +1,6 @@
 export interface RealtimeWorkerEnv {
   REALTIME_HUB: DurableObjectNamespace;
-  REALTIME_API_TOKEN?: string;
+  REALTIME_API_TOKEN: string;
 }
 
 type PublishEvent = {
@@ -61,7 +61,15 @@ export class RealtimeHub {
     }
 
     if (url.pathname === "/publish" && request.method === "POST") {
-      const event = (await request.json()) as PublishEvent;
+      let event: PublishEvent;
+      try {
+        event = (await request.json()) as PublishEvent;
+      } catch {
+        return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
       this.broadcast(event);
       return json({ success: true });
     }
@@ -93,8 +101,11 @@ export default {
     }
 
     if (url.pathname === "/publish") {
+      if (!env.REALTIME_API_TOKEN) {
+        return new Response("Service unavailable: REALTIME_API_TOKEN not configured", { status: 503 });
+      }
       const token = request.headers.get("authorization")?.replace("Bearer ", "") || "";
-      if (env.REALTIME_API_TOKEN && token !== env.REALTIME_API_TOKEN) {
+      if (token !== env.REALTIME_API_TOKEN) {
         return unauthorized();
       }
     }

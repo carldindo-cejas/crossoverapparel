@@ -23,17 +23,24 @@ async function verifyJwt(token, secret) {
 
         const content = `${header}.${payload}`;
         const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(content));
-        const sigBytes = new Uint8Array(sig);
-        let expectedSig = "";
-        for (let i = 0; i < sigBytes.length; i++) {
-            expectedSig += String.fromCharCode(sigBytes[i]);
-        }
-        expectedSig = btoa(expectedSig)
-            .replace(/\+/g, "-")
-            .replace(/\//g, "_")
-            .replace(/=+$/g, "");
+        const expectedBytes = new Uint8Array(sig);
 
-        if (expectedSig !== signature) return null;
+        // Decode received signature for constant-time comparison
+        const receivedB64 = signature.replace(/-/g, "+").replace(/_/g, "/");
+        const padded = receivedB64 + "=".repeat((4 - (receivedB64.length % 4)) % 4);
+        const binaryStr = atob(padded);
+        const receivedBytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) {
+            receivedBytes[i] = binaryStr.charCodeAt(i);
+        }
+
+        // Constant-time comparison to prevent timing attacks
+        if (expectedBytes.length !== receivedBytes.length) return null;
+        let mismatch = 0;
+        for (let i = 0; i < expectedBytes.length; i++) {
+            mismatch |= expectedBytes[i] ^ receivedBytes[i];
+        }
+        if (mismatch !== 0) return null;
 
         const decoded = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
         if (!decoded.exp || decoded.exp < Math.floor(Date.now() / 1000)) return null;

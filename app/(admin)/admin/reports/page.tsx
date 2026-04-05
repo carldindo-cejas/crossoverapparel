@@ -25,7 +25,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function AdminReportsPage() {
-  const { data, loading, error } = useApi<ReportPayload>("/api/owner/reports");
+  const { data, loading, error } = useApi<ReportPayload>("/api/admin/reports");
 
   const totalRevenue = useMemo(
     () => (data?.salesHistory || []).reduce((acc, row) => acc + Number(row.revenue_cents), 0),

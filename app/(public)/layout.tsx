@@ -1,5 +1,24 @@
+import type { Metadata } from "next";
+import type React from "react";
 import { SiteHeader } from "@/components/site/site-header";
 import { SiteFooter } from "@/components/site/site-footer";
+
+export const metadata: Metadata = {
+  title: {
+    template: "%s | Crossover Apparel",
+    default: "Crossover Apparel — Premium Custom Teamwear",
+  },
+  description:
+    "Crossover Apparel crafts high-quality custom jerseys, t-shirts, polo shirts, and warmers for clubs, schools, and performance teams.",
+  openGraph: {
+    siteName: "Crossover Apparel",
+    title: "Crossover Apparel — Premium Custom Teamwear",
+    description:
+      "High-quality custom teamwear engineered for identity. Jerseys, t-shirts, warmers, and more.",
+    type: "website",
+  },
+  robots: { index: true, follow: true },
+};
 
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
