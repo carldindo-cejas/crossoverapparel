@@ -1,8 +1,11 @@
 import worker from "./.open-next/worker.js";
 import { PresenceHub as PresenceHubImpl } from "./lib/durable-objects/presence-hub";
 
-export * from "./.open-next/worker.js";
+// Explicitly export the PresenceHub Durable Object class for Wrangler's validator
 export class PresenceHub extends PresenceHubImpl {}
+
+// Export all other workers from OpenNext
+export * from "./.open-next/worker.js";
 
 /**
  * Verify a JWT token using HMAC-SHA256.

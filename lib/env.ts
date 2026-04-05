@@ -31,6 +31,7 @@ export function getWorkerEnv(): WorkerEnv {
     ASSETS: cloudflareEnv.ASSETS,
     PRODUCT_IMAGES: cloudflareEnv.PRODUCT_IMAGES,
     ORDER_FILES: cloudflareEnv.ORDER_FILES,
+    PAYMENT_RECEIPTS: cloudflareEnv.PAYMENT_RECEIPTS,
     PRESENCE_HUB: cloudflareEnv.PRESENCE_HUB,
     AUTH_SECRET: cloudflareEnv.AUTH_SECRET,
     R2_PUBLIC_BASE_URL: cloudflareEnv.R2_PUBLIC_BASE_URL,

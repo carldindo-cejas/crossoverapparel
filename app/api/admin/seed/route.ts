@@ -20,18 +20,85 @@ export async function POST(request: NextRequest) {
     const db = getDb(env);
     steps.push("got db");
 
-    // ── Helper ─────────────────────────────────────────────────────
+    // ── Helpers ────────────────────────────────────────────────────
     async function hasColumn(table: string, col: string) {
       const rows = await db.prepare(`PRAGMA table_info(${table})`).all<{ name: string }>();
       return rows.results.some((r) => r.name === col);
     }
 
-    // ── Migrate existing users table ──────────────────────────────
+    async function tableExists(name: string) {
+      const row = await sqlFirst<{ cnt: number }>(
+        db,
+        "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=?",
+        [name]
+      );
+      return (row?.cnt ?? 0) > 0;
+    }
+
+    // ── Ensure users table exists with TEXT PRIMARY KEY ───────────
+    if (!(await tableExists("users"))) {
+      await sqlRun(
+        db,
+        `CREATE TABLE users (
+          id TEXT PRIMARY KEY,
+          email TEXT NOT NULL UNIQUE,
+          password_hash TEXT,
+          full_name TEXT,
+          role TEXT NOT NULL DEFAULT 'customer',
+          is_active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )`,
+        []
+      );
+      steps.push("created users table");
+    } else {
+      // Fix: if users.id was created as INTEGER, recreate with TEXT PK
+      const cols = await db
+        .prepare("PRAGMA table_info(users)")
+        .all<{ name: string; type: string; pk: number }>();
+      const idCol = cols.results.find((c) => c.name === "id");
+      if (idCol && idCol.type.toUpperCase() !== "TEXT") {
+        await sqlRun(db, "PRAGMA foreign_keys = OFF", []);
+        await sqlRun(
+          db,
+          `CREATE TABLE users_new (
+            id TEXT PRIMARY KEY,
+            email TEXT NOT NULL UNIQUE,
+            password_hash TEXT,
+            full_name TEXT,
+            role TEXT NOT NULL DEFAULT 'customer',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+          )`,
+          []
+        );
+        await sqlRun(
+          db,
+          `INSERT INTO users_new (id, email, password_hash, full_name, role, is_active, created_at, updated_at)
+           SELECT CAST(id AS TEXT), email, password_hash, full_name,
+                  COALESCE(role, 'customer'),
+                  COALESCE(is_active, 1),
+                  COALESCE(created_at, CURRENT_TIMESTAMP),
+                  COALESCE(updated_at, CURRENT_TIMESTAMP)
+           FROM users`,
+          []
+        );
+        await sqlRun(db, "DROP TABLE users", []);
+        await sqlRun(db, "ALTER TABLE users_new RENAME TO users", []);
+        await sqlRun(db, "PRAGMA foreign_keys = ON", []);
+        steps.push("migrated users.id from INTEGER to TEXT PRIMARY KEY");
+      }
+    }
+
+    // ── Migrate existing users table columns ──────────────────────
     const userCols: [string, string][] = [
       ["role", "ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'customer'"],
       ["is_active", "ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1"],
       ["full_name", "ALTER TABLE users ADD COLUMN full_name TEXT"],
       ["password_hash", "ALTER TABLE users ADD COLUMN password_hash TEXT"],
+      ["created_at", "ALTER TABLE users ADD COLUMN created_at TEXT DEFAULT CURRENT_TIMESTAMP"],
       ["updated_at", "ALTER TABLE users ADD COLUMN updated_at TEXT DEFAULT CURRENT_TIMESTAMP"],
     ];
     for (const [col, sql] of userCols) {
@@ -41,24 +108,27 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Ensure users indexes
+    await sqlRun(db, "CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)", []);
+    await sqlRun(db, "CREATE INDEX IF NOT EXISTS idx_users_role_active ON users(role, is_active)", []);
+
     // ── Migrate orders table ──────────────────────────────────────
     const orderCols: [string, string][] = [
       ["quantity", "ALTER TABLE orders ADD COLUMN quantity INTEGER NOT NULL DEFAULT 0"],
+      ["payment_receipt_r2_key", "ALTER TABLE orders ADD COLUMN payment_receipt_r2_key TEXT"],
     ];
-    async function tableExists(name: string) {
-      const row = await sqlFirst<{ cnt: number }>(
-        db,
-        "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=?",
-        [name]
-      );
-      return (row?.cnt ?? 0) > 0;
-    }
     if (await tableExists("orders")) {
       for (const [col, sql] of orderCols) {
         if (!(await hasColumn("orders", col))) {
           await sqlRun(db, sql, []);
           steps.push("added orders." + col);
         }
+      }
+      // Migrate refunded → payment_failed
+      const refundedCount = (await sqlFirst<{ c: number }>(db, "SELECT COUNT(*) as c FROM orders WHERE status = 'refunded'", []))?.c ?? 0;
+      if (refundedCount > 0) {
+        await sqlRun(db, "UPDATE orders SET status = 'payment_failed' WHERE status = 'refunded'", []);
+        steps.push(`migrated ${refundedCount} orders from refunded to payment_failed`);
       }
     }
 

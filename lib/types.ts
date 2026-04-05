@@ -72,6 +72,7 @@ export type Order = {
   total_cents: number;
   placed_at: string;
   notes: string | null;
+  payment_receipt_r2_key: string | null;
   customer_email: string;
   customer_name: string;
   items: OrderItem[];

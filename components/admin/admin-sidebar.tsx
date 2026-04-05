@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { NotificationBell } from "@/components/notification-bell";
+import type { Notification } from "@/components/notification-bell";
 
 const navItems = [
   { href: "/admin", label: "Dashboard" },
@@ -13,7 +15,7 @@ const navItems = [
   { href: "/admin/reports", label: "Reports" }
 ] as const;
 
-export function AdminSidebar() {
+export function AdminSidebar({ notifications = [] }: { notifications?: Notification[] }) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -24,7 +26,10 @@ export function AdminSidebar() {
 
   return (
     <aside className="w-full rounded-3xl border border-neutral-200 bg-white p-5 lg:w-72">
-      <p className="mb-4 text-xs uppercase tracking-[0.2em] text-neutral-500">Crossover Owner</p>
+      <div className="mb-4 flex items-center justify-between">
+        <p className="text-xs uppercase tracking-[0.2em] text-neutral-500">Crossover Owner</p>
+        <NotificationBell notifications={notifications} />
+      </div>
       <nav className="space-y-2">
         {navItems.map((item) => {
           const active = pathname === item.href;

@@ -6,6 +6,13 @@ export default function LoginSelectorPage() {
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#fbfbfb,#f1f3f5)] p-6">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 pt-16">
+        <div className="flex justify-center">
+          <Link href="/">
+            <Button variant="outline" className="gap-2">
+              ← Back to Homepage
+            </Button>
+          </Link>
+        </div>
         <div className="space-y-2 text-center">
           <p className="text-xs uppercase tracking-[0.2em] text-neutral-500">Access</p>
           <h1 className="text-4xl font-semibold text-neutral-900">Sign in as Owner or Designer</h1>

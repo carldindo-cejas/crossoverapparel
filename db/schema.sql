@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS orders (
   id TEXT PRIMARY KEY,
   order_number TEXT NOT NULL UNIQUE,
   customer_id TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('pending', 'confirmed', 'in_production', 'ready_to_ship', 'shipped', 'delivered', 'cancelled', 'refunded')),
+  status TEXT NOT NULL CHECK (status IN ('pending', 'confirmed', 'in_production', 'ready_to_ship', 'shipped', 'delivered', 'cancelled', 'payment_failed')),
   payment_status TEXT NOT NULL CHECK (payment_status IN ('unpaid', 'partial', 'paid', 'failed', 'refunded')),
   subtotal_cents INTEGER NOT NULL CHECK (subtotal_cents >= 0),
   tax_cents INTEGER NOT NULL DEFAULT 0 CHECK (tax_cents >= 0),
@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS orders (
   fulfilled_at TEXT,
   cancelled_at TEXT,
   notes TEXT,
+  payment_receipt_r2_key TEXT,
   quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -261,7 +262,7 @@ CREATE TABLE IF NOT EXISTS payment_methods (
 
 INSERT OR IGNORE INTO payment_methods (name, is_available) VALUES
   ('Cash on Delivery', 1),
-  ('Instapay', 0),
+  ('Instapay', 1),
   ('Bank Transfer', 0);
 
 CREATE TABLE IF NOT EXISTS ratings (

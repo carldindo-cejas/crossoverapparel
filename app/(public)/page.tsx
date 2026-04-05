@@ -56,6 +56,11 @@ function ProductCarousel({ products, showNewRibbon = false }: { products: Produc
     ? products[0].id // products are sorted by created_at DESC
     : null;
 
+  function orderHref(product: Product) {
+    const isExclusive = product.category_id === 5 || (product.category_name?.toLowerCase().includes("exclusive") ?? false);
+    return isExclusive ? `/exclusive-order/${product.id}` : `/product-order/${product.id}`;
+  }
+
   return (
     <div className="relative">
       <button
@@ -78,7 +83,7 @@ function ProductCarousel({ products, showNewRibbon = false }: { products: Produc
             className="w-56 flex-shrink-0"
           >
             <Card className="overflow-hidden border-neutral-200">
-              <Link href={`/product-order/${product.id}` as any}>
+              <Link href={orderHref(product) as any}>
               <div className="relative aspect-[4/5] bg-neutral-100">
                 {product.id === newestId && (
                   <span className="absolute left-0 top-3 z-10 rounded-r-full bg-red-500 px-3 py-1 text-xs font-bold uppercase text-white shadow-md">
@@ -107,7 +112,7 @@ function ProductCarousel({ products, showNewRibbon = false }: { products: Produc
                 <p className="text-sm font-semibold text-neutral-900">
                   {formatCurrency(product.base_price_cents, product.currency)}
                 </p>
-                <Link href={`/product-order/${product.id}` as any}>
+                <Link href={orderHref(product) as any}>
                   <Button size="sm" className="mt-1 w-full">Order Now</Button>
                 </Link>
               </CardContent>

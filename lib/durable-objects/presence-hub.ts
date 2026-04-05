@@ -75,6 +75,7 @@ export class PresenceHub extends DurableObject {
     const server = pair[1];
 
     this.state.acceptWebSocket(server);
+    server.serializeAttachment({ userId, role: roleRaw });
     this.sessions.set(server, { userId, role: roleRaw });
 
     const existing = this.onlineUsers.get(userId);
@@ -108,9 +109,10 @@ export class PresenceHub extends DurableObject {
   }
 
   async webSocketClose(ws: WebSocket): Promise<void> {
-    const session = this.sessions.get(ws);
+    const meta = (ws.deserializeAttachment() ?? this.sessions.get(ws)) as { userId: string; role: PresenceRole } | undefined;
     this.sessions.delete(ws);
 
+    const session = meta;
     if (!session) {
       return;
     }
@@ -251,27 +253,31 @@ export class PresenceHub extends DurableObject {
 
   private broadcast(message: PresenceMessage) {
     const encoded = JSON.stringify(message);
-    for (const socket of this.sessions.keys()) {
-      if (socket.readyState === 1) {
-        socket.send(encoded);
+    for (const ws of this.state.getWebSockets()) {
+      if (ws.readyState === 1) {
+        ws.send(encoded);
       }
     }
   }
 
   private broadcastToRole(message: PresenceMessage, role: PresenceRole) {
     const encoded = JSON.stringify(message);
-    for (const [socket, session] of this.sessions.entries()) {
-      if (socket.readyState === 1 && session.role === role) {
-        socket.send(encoded);
+    for (const ws of this.state.getWebSockets()) {
+      if (ws.readyState !== 1) continue;
+      const meta = ws.deserializeAttachment() as { role?: string } | null;
+      if (meta?.role === role) {
+        ws.send(encoded);
       }
     }
   }
 
   private broadcastToUser(message: PresenceMessage, targetUserId: string) {
     const encoded = JSON.stringify(message);
-    for (const [socket, session] of this.sessions.entries()) {
-      if (socket.readyState === 1 && session.userId === targetUserId) {
-        socket.send(encoded);
+    for (const ws of this.state.getWebSockets()) {
+      if (ws.readyState !== 1) continue;
+      const meta = ws.deserializeAttachment() as { userId?: string } | null;
+      if (meta?.userId === targetUserId) {
+        ws.send(encoded);
       }
     }
   }

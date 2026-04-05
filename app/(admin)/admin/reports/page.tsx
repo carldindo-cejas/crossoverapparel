@@ -21,7 +21,7 @@ const STATUS_COLORS: Record<string, string> = {
   shipped: "#2563eb",
   delivered: "#16a34a",
   cancelled: "#ef4444",
-  refunded: "#f97316",
+  payment_failed: "#f97316",
 };
 
 export default function AdminReportsPage() {

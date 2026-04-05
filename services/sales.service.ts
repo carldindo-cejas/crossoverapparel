@@ -23,7 +23,7 @@ export async function getSalesAnalytics(env: WorkerEnv, rawRange: { from?: strin
     db,
     `SELECT COALESCE(SUM(total_cents), 0) as total_cents
      FROM orders
-     WHERE status NOT IN ('cancelled', 'refunded')
+     WHERE status NOT IN ('cancelled', 'payment_failed')
        AND placed_at BETWEEN ? AND ?`,
     [from, to]
   );
@@ -37,7 +37,7 @@ export async function getSalesAnalytics(env: WorkerEnv, rawRange: { from?: strin
        SUM(oi.line_total_cents) as total_revenue_cents
      FROM order_items oi
      INNER JOIN orders o ON o.id = oi.order_id
-     WHERE o.status NOT IN ('cancelled', 'refunded')
+     WHERE o.status NOT IN ('cancelled', 'payment_failed')
        AND o.placed_at BETWEEN ? AND ?
      GROUP BY oi.product_id, oi.product_name_snapshot
      ORDER BY total_quantity DESC
@@ -52,7 +52,7 @@ export async function getSalesAnalytics(env: WorkerEnv, rawRange: { from?: strin
        COUNT(*) as order_count,
        COALESCE(SUM(total_cents), 0) as total_sales_cents
      FROM orders
-     WHERE status NOT IN ('cancelled', 'refunded')
+     WHERE status NOT IN ('cancelled', 'payment_failed')
        AND placed_at BETWEEN ? AND ?
      GROUP BY DATE(placed_at)
      ORDER BY sales_date ASC`,
@@ -77,7 +77,7 @@ export async function getSalesHistory(env: WorkerEnv, rawRange: { from?: string;
        COUNT(*) as orders,
        COALESCE(SUM(total_cents), 0) as revenue_cents
      FROM orders
-     WHERE status NOT IN ('cancelled', 'refunded')
+     WHERE status NOT IN ('cancelled', 'payment_failed')
        AND placed_at BETWEEN ? AND ?
      GROUP BY DATE(placed_at)
      ORDER BY date ASC`,
@@ -112,7 +112,7 @@ export async function getCategoryRevenue(env: WorkerEnv, rawRange: { from?: stri
      INNER JOIN orders o ON o.id = oi.order_id
      LEFT JOIN products p ON p.id = oi.product_id
      LEFT JOIN categories c ON c.id = p.category_id
-     WHERE o.status NOT IN ('cancelled', 'refunded')
+     WHERE o.status NOT IN ('cancelled', 'payment_failed')
        AND o.placed_at BETWEEN ? AND ?
      GROUP BY COALESCE(p.category_id, 0), COALESCE(c.name, 'Uncategorized')
      ORDER BY revenue_cents DESC`,
@@ -130,7 +130,7 @@ export async function getMonthlyTrends(env: WorkerEnv) {
        COALESCE(SUM(total_cents), 0) as revenue_cents,
        ROUND(COALESCE(AVG(total_cents), 0)) as avg_order_cents
      FROM orders
-     WHERE status NOT IN ('cancelled', 'refunded')
+     WHERE status NOT IN ('cancelled', 'payment_failed')
      GROUP BY strftime('%Y-%m', placed_at)
      ORDER BY month ASC
      LIMIT 12`
@@ -149,7 +149,7 @@ export async function getTopCustomers(env: WorkerEnv, rawRange: { from?: string;
        COALESCE(SUM(o.total_cents), 0) as total_spent_cents
      FROM orders o
      LEFT JOIN customers cu ON cu.id = o.customer_id
-     WHERE o.status NOT IN ('cancelled', 'refunded')
+     WHERE o.status NOT IN ('cancelled', 'payment_failed')
        AND o.placed_at BETWEEN ? AND ?
      GROUP BY o.customer_id
      ORDER BY total_spent_cents DESC
@@ -173,7 +173,7 @@ export async function getPaymentMethodStats(env: WorkerEnv) {
        COUNT(*) as order_count,
        COALESCE(SUM(o.total_cents), 0) as revenue_cents
      FROM orders o
-     WHERE o.status NOT IN ('cancelled', 'refunded')
+     WHERE o.status NOT IN ('cancelled', 'payment_failed')
      GROUP BY payment_method
      ORDER BY order_count DESC`
   );

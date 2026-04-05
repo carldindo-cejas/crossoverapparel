@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type React from "react";
 import { SiteHeader } from "@/components/site/site-header";
 import { SiteFooter } from "@/components/site/site-footer";
+import { ZapierChatbot } from "@/components/zapier-chatbot";
 
 export const metadata: Metadata = {
   title: {
@@ -26,6 +27,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
       <SiteHeader />
       <main>{children}</main>
       <SiteFooter />
+      <ZapierChatbot />
     </div>
   );
 }

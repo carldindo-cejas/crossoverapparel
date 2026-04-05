@@ -2,280 +2,328 @@
 
 Production-ready full-stack web application for custom sportswear ordering and operations.
 
+Live: https://crossoverapparel.shop
+
 ## Overview
 
-Crossover Apparel is built with Next.js App Router and TypeScript, backed by Cloudflare services:
+Crossover Apparel is built with Next.js App Router and TypeScript, deployed on Cloudflare Workers via OpenNext. The platform covers the full lifecycle of a custom sportswear order — from storefront browsing and checkout through internal designer workflows and admin reporting.
 
-- Cloudflare D1 for relational data
-- Cloudflare R2 for file storage
-- Cloudflare Durable Objects + WebSockets for realtime updates
+**Three user-facing apps in one deployment:**
 
-The system includes:
-
-- Public storefront and guest checkout
-- Admin dashboard and operations tools
-- Designer panel for assigned order workflows
-- Live updates for assignments, presence, and dashboard metrics
+- **Public storefront** — product browsing, multiple order flows, payment, tracking
+- **Admin panel** — KPI dashboard, order management, staff, products, categories, reports
+- **Designer panel** — assigned orders, status updates, notes, history, commission tracking
 
 ## Tech Stack
 
-- Next.js 15 (App Router)
-- TypeScript
-- Tailwind CSS v4
-- shadcn-style component architecture
-- Framer Motion
-- Recharts
-- Zod
-- Cloudflare Workers
-- Cloudflare D1 (SQLite)
-- Cloudflare R2
-- Cloudflare Durable Objects (Realtime Hub)
-- Wrangler 4
+| Area | Technology |
+|------|-----------|
+| Framework | Next.js 15.5 (App Router) |
+| Language | TypeScript |
+| Styling | Tailwind CSS v4 |
+| UI Components | shadcn-style (Radix UI primitives) |
+| Animations | Framer Motion |
+| Charts | Recharts |
+| Validation | Zod |
+| Runtime | Cloudflare Workers (via @opennextjs/cloudflare) |
+| Database | Cloudflare D1 (SQLite) |
+| File Storage | Cloudflare R2 |
+| Realtime | Cloudflare Durable Objects + hibernatable WebSockets |
+| Deployment | Wrangler 4 |
 
 ## Key Product Areas
 
-### Public Website
+### Public Storefront
 
-- Home, Shop, Product details
-- Custom Order flow
-- Order Summary and Receipt
-- Track Order by order number
+- Homepage with featured products, testimonials, and banners
+- Product catalog with category filtering
+- **Three order flows:**
+  - **Product Order** (`/product-order/[productId]`) — standard configurable product order
+  - **Exclusive Order** (`/exclusive-order/[productId]`) — premium/exclusive product order
+  - **Custom Order** (`/custom-order`) — fully custom design request
+- Order Summary page with payment selection
+- Receipt page
+- **Track Order** (`/track-order`) — live status polling with real-time updates
+- Customer login
 
-### Owner Panel
+### Payment Methods
 
-- KPI dashboard (sales, orders, statuses)
-- Orders management (status updates, assign staff, files)
-- Product CRUD
-- Category CRUD
-- Staff management (create staff access, activate/deactivate)
-- Reports (revenue history, staff performance)
+- **Lightning Network** — BTC Lightning invoice with QR code, rate conversion, and confirmation flow
+- **InstaPay** — manual QR payment with required receipt upload
+- Both manual payment methods require receipt upload before submission
 
-### Staff Panel
+### Admin Panel (`/admin`)
 
-- Staff login
-- View assigned orders
-- View order details and files
-- Update order status
-- Add notes
-- View assignment history
+- KPI dashboard (revenue, orders, pending, in-production, delivered counts)
+- Notification bell — real-time alerts for new orders and designer status changes
+- **Orders** — list, filter by status, assign designer, update status, add notes, view files/receipts
+- **Products** — create, edit, archive, image upload
+- **Categories** — hierarchical category management
+- **Staff** — create designer accounts, activate/deactivate, view last seen
+- **Reports** — sales history, designer performance, order status breakdown, category revenue, monthly trends, top customers
+
+### Designer Panel (`/designer`)
+
+- Notification bell — real-time alerts for new assignments and admin status changes
+- Dashboard with assigned and recent orders
+- **Order detail** — full order info, files, customizations, status update, notes
+- **History** — completed/delivered order history
+- Commission tracking
 
 ### Realtime
 
-- Staff online/offline presence updates
-- Live dashboard refresh events
-- Live order assignment and status updates
+- Hibernatable WebSocket Durable Object (`PresenceHub`) for persistent connections
+- Session metadata persisted via `serializeAttachment` / `deserializeAttachment` (survives DO hibernation)
+- Designer online/offline/break presence
+- Live notifications for order assignments and status changes
+- Event bus: `assignment.updated`, `order.status.updated`, `order.note.added`, `dashboard.updated`, `staff.presence.updated`
+
+## Order Statuses
+
+| Status | Meaning |
+|--------|---------|
+| `pending` | Order placed, awaiting confirmation |
+| `confirmed` | Order confirmed by admin |
+| `in_production` | Designer is producing the order |
+| `ready_to_ship` | Production complete |
+| `shipped` | Order dispatched |
+| `delivered` | Order received by customer |
+| `cancelled` | Order cancelled |
+| `payment_failed` | Payment not received / failed |
 
 ## Project Structure
 
 ```
 app/
-  (public)/
-  (owner)/
-  (staff)/
-  api/
+  (public)/          Public storefront routes
+  (admin)/           Admin panel routes
+  (designer)/        Designer panel routes
+  api/               All API route handlers
 components/
-  admin/
-  site/
-  ui/
+  admin/             Admin-specific UI components
+  site/              Storefront layout components
+  ui/                Shared primitives (Button, Input, Card, etc.)
+  notification-bell.tsx
+  lightning-payment.tsx
+  instapay-payment.tsx
+  product-card.tsx
 db/
+  schema.sql         D1 database schema
+  client.ts          D1 binding types
+  query.ts           Generic query helpers
+  raw.ts             Raw SQL helpers
 hooks/
+  use-api.ts
+  use-realtime.ts
+  use-presence.ts
 lib/
-services/
+  format.ts          formatDate (GMT+8 / Asia/Manila), formatCurrency
+  types.ts           Shared TypeScript types
+  auth/              JWT guard, password (PBKDF2), token signing
+  durable-objects/   PresenceHub Durable Object implementation
+  realtime/          Client-side presence WebSocket helper
+services/            Business logic layer (one file per domain)
 workers/
+  realtime-worker.ts Standalone realtime Cloudflare Worker
+presence-hub-api/    Separate Wrangler project for PresenceHub development/testing
 ```
 
-## Core Data Layer
+## API Surface
 
-- Schema: db/schema.sql
-- D1 client types: db/client.ts
-- Generic query helpers: db/query.ts
-- Raw SQL helpers: db/raw.ts
+### Public (no auth)
 
-## Service Layer
+```
+GET  /api/health
+GET  /api/products
+GET  /api/categories
+GET  /api/payment-methods
+POST /api/testimonials
+GET  /api/realtime/config
+GET  /api/products/images/[...key]
 
-Business logic is centralized under services/:
+POST /api/orders
+GET  /api/orders/[orderNumber]
+POST /api/orders/[orderNumber]/confirm-payment
+POST /api/orders/[orderNumber]/lightning-invoice
+POST /api/orders/[orderNumber]/payment-receipt
+POST /api/orders/[orderNumber]/cancel
+POST /api/orders/[orderNumber]/rating
+GET  /api/orders/files/[...key]
+GET  /api/orders/payment-receipts/[...key]
 
-- auth.service.ts
-- order.service.ts
-- upload.service.ts
-- product.service.ts
-- category.service.ts
-- staff.service.ts
-- staff-admin.service.ts
-- designer.service.ts
-- sales.service.ts
-- dashboard.service.ts
-- realtime-publisher.service.ts
-
-## API Surface (Current)
-
-### Public
-
-- GET /api/health
-- GET /api/products
-- GET /api/categories
-- POST /api/orders
-- GET /api/orders/:orderNumber
-- POST /api/uploads
-- GET /api/realtime/config
+POST /api/uploads
+POST /api/presence
+```
 
 ### Auth
 
-- POST /api/auth/owner/login
-- POST /api/auth/staff/login
-- GET /api/auth/me
+```
+POST /api/auth/admin/login
+POST /api/auth/designer/login
+POST /api/auth/staff/login
+POST /api/auth/logout
+GET  /api/auth/me
+```
 
-Deprecated auth endpoints (return 410):
-- POST /api/auth/admin/login
-- POST /api/auth/designer/login
+### Admin (requires admin session)
 
-Customer storefront and ordering routes remain accessible without login.
+```
+GET  /api/admin/dashboard
+GET  /api/admin/sales
+GET  /api/admin/reports
+GET  /api/admin/commissions
 
-### Owner
+GET    /api/admin/orders
+PATCH  /api/admin/orders/[orderId]/status
+PATCH  /api/admin/orders/[orderId]/notes
+POST   /api/admin/orders/[orderId]/assign-designer
 
-- GET /api/owner/dashboard
-- GET /api/owner/sales
-- GET /api/owner/reports
+GET    /api/admin/products
+POST   /api/admin/products
+PATCH  /api/admin/products/[id]
+DELETE /api/admin/products/[id]
+POST   /api/admin/products/[id]/image
 
-- GET /api/owner/orders
-- POST /api/owner/orders/:orderId/assign-designer
-- PATCH /api/owner/orders/:orderId/status
-- PATCH /api/owner/orders/:orderId/notes
+GET    /api/admin/categories
+POST   /api/admin/categories
+PATCH  /api/admin/categories/[id]
+DELETE /api/admin/categories/[id]
 
-- POST /api/owner/products
-- PATCH /api/owner/products/:id
-- DELETE /api/owner/products/:id
+GET    /api/admin/payment-methods
+PATCH  /api/admin/payment-methods/[id]
 
-- GET /api/owner/categories
-- POST /api/owner/categories
-- PATCH /api/owner/categories/:id
-- DELETE /api/owner/categories/:id
+GET  /api/admin/staff
+POST /api/admin/staff
+PUT  /api/admin/staff/[id]/password
+POST /api/admin/staff/[id]/activation
 
-- GET /api/owner/staff
-- POST /api/owner/staff
-- PATCH /api/owner/staff/:id/activation
+POST /api/admin/seed  (database migration / seeding)
+```
 
-### Staff
+### Designer (requires designer session)
 
-- GET /api/staff/orders
-- GET /api/staff/orders/:orderNumber
-- PATCH /api/staff/orders/:orderNumber/status
-- PATCH /api/staff/orders/:orderNumber/notes
-
-### Staff Presence
-
-- POST /api/staff/presence
+```
+GET   /api/designer/orders
+GET   /api/designer/orders/[orderNumber]
+PATCH /api/designer/orders/[orderNumber]/status
+PATCH /api/designer/orders/[orderNumber]/notes
+POST  /api/designer/presence
+GET   /api/designer/commission
+```
 
 ## Realtime Architecture
 
-Realtime is implemented as a dedicated Cloudflare Worker with a Durable Object hub.
+Realtime uses a standalone Cloudflare Worker (`workers/realtime-worker.ts`) with a Durable Object (`PresenceHub`) for WebSocket connection management.
 
-- Worker entry: workers/realtime-worker.ts
-- Config: wrangler.realtime.toml
-- Durable Object class: RealtimeHub
+```
+App services  →  realtime-publisher.service.ts  →  POST /publish  →  PresenceHub
+                                                                          │
+                                          Admin/Designer UI  ←  WebSocket │
+```
 
-Endpoints:
+**PresenceHub** (`lib/durable-objects/presence-hub.ts`):
+- Hibernatable WebSocket API — connections survive Durable Object sleep
+- `serializeAttachment()` persists `role` and `userId` per connection through hibernation
+- `state.getWebSockets()` used in all broadcast methods to retrieve live connections after wake
+- Separate broadcast channels by role (`owner`, `designer`, `staff`)
 
-- GET /health
-- POST /publish (token protected)
-- GET /ws?role=<admin|designer|staff>&userId=<optional>
+### Realtime Worker Endpoints
 
-### Event Flow
+```
+GET  /health
+POST /publish         (REALTIME_API_TOKEN required)
+GET  /ws?role=<role>&userId=<optional>
+```
 
-Application services publish events through services/realtime-publisher.service.ts.
+## Data Flow — Timezone
 
-Current event types include:
+All timestamps are stored as UTC in D1 (`CURRENT_TIMESTAMP`). Display-side conversion to **GMT+8 (Asia/Manila)** is handled by `lib/format.ts`:
 
-- assignment.updated
-- order.status.updated
-- order.note.added
-- dashboard.updated
-- staff.presence.updated
+```ts
+formatDate(value)  // → "Apr 5, 2026, 8:00 AM" in Asia/Manila time
+```
 
-The Designer and Admin UIs subscribe through hooks/use-realtime.ts.
+Deadline date `min` inputs also use `{ timeZone: "Asia/Manila" }` for accurate local date calculation.
 
 ## Environment and Configuration
 
-### Main app worker (wrangler.toml)
+### Wrangler bindings (`wrangler.toml`)
 
-Required/used bindings and vars:
+| Binding | Type | Resource |
+|---------|------|----------|
+| `DB` | D1 | crossover-apparel-db |
+| `PRODUCT_IMAGES` | R2 | crossover-product-images |
+| `ORDER_FILES` | R2 | crossover-order-files |
+| `PAYMENT_RECEIPTS` | R2 | crossover-payment-receipts |
+| `PRESENCE_HUB` | Durable Object | PresenceHub |
+| `ASSETS` | Static Assets | .open-next/assets |
 
-- DB (D1)
-- ASSETS (R2)
-- REALTIME_API_URL
-- REALTIME_API_TOKEN
+### Secrets (set via `wrangler secret put`)
 
-### Browser env
+- `AUTH_SECRET` — JWT signing key
+- `REALTIME_API_TOKEN` — shared secret between app and realtime worker
+- `SEED_KEY` — protects the `/api/admin/seed` migration endpoint
 
-See .env.example:
+### Environment Variables
 
-- NEXT_PUBLIC_REALTIME_WS_URL=wss://<realtime-worker>/ws
+```toml
+APP_NAME = "Crossover Apparel"
+APP_ENV  = "production"
+REALTIME_API_URL = "https://..."   # URL of realtime worker
+```
 
-### Realtime worker (wrangler.realtime.toml)
+```env
+# .env.local
+NEXT_PUBLIC_REALTIME_WS_URL=wss://<realtime-worker>/ws
+```
 
-- Durable Object binding: REALTIME_HUB
-- REALTIME_API_TOKEN
+### Realtime worker (`wrangler.realtime.toml`)
+
+Separate config file for the realtime worker. Requires:
+- Durable Object binding: `REALTIME_HUB → PresenceHub`
+- Secret: `REALTIME_API_TOKEN`
 
 ## Local Development
 
-1. Install dependencies:
-
 ```bash
 npm install
-```
-
-2. Start Next.js app:
-
-```bash
 npm run dev
 ```
 
-3. Typecheck:
+## Build & Deploy
 
 ```bash
+# Full production deploy
+npm run deploy
+
+# Preview locally with Wrangler
+npm run preview
+
+# Type check only
 npm run typecheck
 ```
 
-4. Build:
+Deploy command runs: `next build → opennextjs-cloudflare build → wrangler deploy`
+
+## Database Setup
+
+Apply schema to D1:
 
 ```bash
-npm run build
+npx wrangler d1 execute crossover-apparel-db --file db/schema.sql --remote
 ```
 
-## Database Setup (D1)
+Run migrations / seed via the protected endpoint after deploy:
 
-Apply schema to your D1 database:
-
-```bash
-npx wrangler d1 execute crossover_apparel --file db/schema.sql
+```
+POST /api/admin/seed
+x-seed-key: <SEED_KEY>
 ```
 
-If you use a remote DB, add --remote.
+## Security
 
-## Realtime Worker Deployment
-
-Deploy dedicated realtime worker:
-
-```bash
-npx wrangler deploy -c wrangler.realtime.toml
-```
-
-Then set:
-
-- wrangler.toml -> REALTIME_API_URL
-- wrangler.toml -> REALTIME_API_TOKEN
-- .env.local -> NEXT_PUBLIC_REALTIME_WS_URL
-
-## Security Notes
-
-- Role checks are enforced at API layer via auth guard.
-- Password hashing is PBKDF2-based.
-- Signed session token is used for auth state.
-- Realtime publish endpoint is token protected.
-
-## Current Status
-
-- Public, Admin, and Designer apps are implemented.
-- D1 schema and service-layer architecture are in place.
-- Durable Object websocket realtime pipeline is integrated.
-- Production build passes.
+- API routes protected by role-checked session tokens (signed with `AUTH_SECRET`)
+- Passwords hashed with PBKDF2 (Web Crypto API)
+- Realtime publish endpoint requires `REALTIME_API_TOKEN` bearer token
+- R2 file access proxied through API routes — buckets are not public
+- `SEED_KEY` required for all destructive migration operations

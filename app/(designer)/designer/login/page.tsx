@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,11 @@ export default function DesignerLoginPage() {
               {loading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
+          <div className="mt-4 text-center">
+            <Link href="/" className="text-sm text-neutral-500 hover:text-neutral-700">
+              ← Back to Homepage
+            </Link>
+          </div>
         </CardContent>
       </Card>
     </div>

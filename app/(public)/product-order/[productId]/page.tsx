@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { LightningPayment } from "@/components/lightning-payment";
+import { InstaPayPayment } from "@/components/instapay-payment";
 import { type ApiEnvelope, type Product, type Category } from "@/lib/types";
 import { useApi } from "@/hooks/use-api";
 import { formatCurrency } from "@/lib/format";
@@ -69,7 +70,6 @@ type FormState = {
   cuttingBelow: string;
   otherInstructions: string;
   deadlineDate: string;
-  deadlineTime: string;
   paymentMethod: string;
   mapLat: string;
   mapLng: string;
@@ -84,7 +84,6 @@ const initialForm: FormState = {
   cuttingBelow: "Straight Cut",
   otherInstructions: "",
   deadlineDate: "",
-  deadlineTime: "",
   paymentMethod: "Cash on Delivery",
   mapLat: "",
   mapLng: "",
@@ -167,11 +166,9 @@ export default function ProductOrderPage() {
     if (!form.mapLat.trim() || !form.mapLng.trim()) return "Map pin location is required";
     if (!form.teamName.trim()) return "Team name is required";
     if (!form.deadlineDate) return "Deadline date is required";
-    if (!form.deadlineTime) return "Deadline time is required";
     const _minDeadline = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     _minDeadline.setHours(0, 0, 0, 0);
     if (new Date(form.deadlineDate + "T00:00:00") < _minDeadline) return "Deadline must be at least 7 days from today";
-    if (form.deadlineTime < "08:00" || form.deadlineTime > "17:00") return "Deadline time must be between 8:00 AM and 5:00 PM";
     if (fileErr(leftLogo)) return `Left logo: ${fileErr(leftLogo)}`;
     if (fileErr(rightLogo)) return `Right logo: ${fileErr(rightLogo)}`;
     if (fileErr(backLogo)) return `Back logo: ${fileErr(backLogo)}`;
@@ -202,7 +199,7 @@ export default function ProductOrderPage() {
         .map((p) => `${p.surname} #${p.number} (${p.size})`)
         .join("; ");
 
-      const deadline = `${form.deadlineDate}T${form.deadlineTime}`;
+      const deadline = form.deadlineDate;
 
       const locationValue =
         `${form.mapLat},${form.mapLng}`;
@@ -299,7 +296,7 @@ export default function ProductOrderPage() {
         cuttingBack: form.cuttingBack,
         cuttingBelow: form.cuttingBelow,
         paymentMethod: form.paymentMethod,
-        deadline: `${form.deadlineDate} ${form.deadlineTime}`,
+        deadline: form.deadlineDate,
         players: sortedPlayers.map((p) => ({ size: p.size, number: p.number, surname: p.surname })),
         instructions: form.otherInstructions.trim(),
         unitPriceCents,
@@ -481,6 +478,12 @@ export default function ProductOrderPage() {
                   phone={orderSummary.phone}
                 />
               )}
+              {orderSummary.paymentMethod === "Instapay" && (
+                <InstaPayPayment
+                  orderNumber={orderSummary.orderNumber}
+                  totalCents={orderSummary.totalCents}
+                />
+              )}
             </CardContent>
           </Card>
         )}
@@ -607,15 +610,9 @@ export default function ProductOrderPage() {
                 </div>
 
                 {/* Deadline */}
-                <div className="grid gap-5 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="deadlineDate">Deadline Date *</Label>
-                    <Input id="deadlineDate" type="date" min={new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]} value={form.deadlineDate} onChange={(e) => updateField("deadlineDate", e.target.value)} required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="deadlineTime">Deadline Time *</Label>
-                    <Input id="deadlineTime" type="time" min="08:00" max="17:00" value={form.deadlineTime} onChange={(e) => updateField("deadlineTime", e.target.value)} required />
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="deadlineDate">Deadline Date *</Label>
+                  <Input id="deadlineDate" type="date" min={new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Manila" })} value={form.deadlineDate} onChange={(e) => updateField("deadlineDate", e.target.value)} required />
                 </div>
 
                 {/* Payment Method */}

@@ -33,6 +33,10 @@ bucket_name = "crossover-product-images"
 binding = "ORDER_FILES"
 bucket_name = "crossover-order-files"
 
+[[r2_buckets]]
+binding = "PAYMENT_RECEIPTS"
+bucket_name = "crossover-payment-receipts"
+
 [[durable_objects.bindings]]
 name = "PRESENCE_HUB"
 class_name = "PresenceHub"

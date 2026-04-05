@@ -53,7 +53,7 @@ const updateStatusSchema = z.object({
     "shipped",
     "delivered",
     "cancelled",
-    "refunded"
+    "payment_failed"
   ]),
   reason: z.string().optional()
 });
@@ -275,6 +275,7 @@ export async function getOrderByNumber(
     total_cents: number;
     placed_at: string;
     notes: string | null;
+    payment_receipt_r2_key: string | null;
     customer_email: string;
     customer_name: string;
     customer_phone: string | null;
@@ -292,6 +293,7 @@ export async function getOrderByNumber(
        o.total_cents,
        o.placed_at,
        o.notes,
+       o.payment_receipt_r2_key,
        c.email as customer_email,
        (c.first_name || ' ' || c.last_name) as customer_name,
        c.phone as customer_phone
@@ -372,6 +374,7 @@ export async function listOrders(env: WorkerEnv, limit = 50, offset = 0) {
        o.total_cents,
        o.currency,
        o.placed_at,
+       o.payment_receipt_r2_key,
        c.email as customer_email,
        (c.first_name || ' ' || c.last_name) as customer_name,
        la.designer_user_id as assignment_designer_id,
@@ -665,8 +668,8 @@ export async function confirmPaymentByCustomer(env: WorkerEnv, orderNumber: stri
     return { orderNumber, paymentStatus: "paid", alreadyPaid: true };
   }
 
-  if (order.status === "cancelled" || order.status === "refunded") {
-    throw new AppError("Cannot update payment for a cancelled or refunded order", 422, "ORDER_CLOSED");
+  if (order.status === "cancelled" || order.status === "payment_failed") {
+    throw new AppError("Cannot update payment for a cancelled or payment failed order", 422, "ORDER_CLOSED");
   }
 
   await sqlRun(
@@ -693,4 +696,60 @@ export async function confirmPaymentByCustomer(env: WorkerEnv, orderNumber: stri
   });
 
   return { orderNumber, paymentStatus: "paid", alreadyPaid: false };
+}
+
+export async function uploadPaymentReceipt(
+  env: WorkerEnv,
+  orderNumber: string,
+  file: File
+) {
+  const db = getDb(env);
+
+  const order = await sqlFirst<{ id: string; payment_receipt_r2_key: string | null }>(
+    db,
+    "SELECT id, payment_receipt_r2_key FROM orders WHERE order_number = ? LIMIT 1",
+    [orderNumber]
+  );
+
+  if (!order) {
+    throw new AppError("Order not found", 404, "ORDER_NOT_FOUND");
+  }
+
+  const bucket = env.PAYMENT_RECEIPTS;
+  if (!bucket) {
+    throw new AppError("PAYMENT_RECEIPTS R2 bucket not configured", 500, "R2_NOT_CONFIGURED");
+  }
+
+  // Delete previous receipt if exists
+  if (order.payment_receipt_r2_key) {
+    try {
+      await bucket.delete(order.payment_receipt_r2_key);
+    } catch {
+      // Ignore deletion errors for missing objects
+    }
+  }
+
+  const sanitizedName = file.name.replace(/[^a-zA-Z0-9._\-\[\] ]/g, "_");
+  const key = `receipts/${order.id}/${crypto.randomUUID()}-${sanitizedName}`;
+  const bytes = await file.arrayBuffer();
+
+  await bucket.put(key, bytes, {
+    httpMetadata: {
+      contentType: file.type || "application/octet-stream",
+    },
+  });
+
+  await sqlRun(
+    db,
+    "UPDATE orders SET payment_receipt_r2_key = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    [key, order.id]
+  );
+
+  return {
+    orderNumber,
+    receiptKey: key,
+    fileName: file.name,
+    mimeType: file.type || "application/octet-stream",
+    size: file.size,
+  };
 }

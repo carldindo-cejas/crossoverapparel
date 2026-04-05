@@ -263,6 +263,7 @@ function TrackOrderContent() {
   const [error, setError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [statusJustChanged, setStatusJustChanged] = useState(false);
 
   const handleTrack = useCallback(async (num?: string, prefilledPhone?: string) => {
     const target = (num ?? orderNumber).trim();
@@ -297,6 +298,36 @@ function TrackOrderContent() {
       setLoading(false);
     }
   }, [orderNumber, phone]);
+
+  // Poll for real-time status updates every 5 seconds when an order is displayed
+  useEffect(() => {
+    if (!order || !phone) return;
+
+    const terminal = ["delivered", "cancelled", "payment_failed"];
+    if (terminal.includes(order.status)) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/orders/${encodeURIComponent(order.order_number)}`, {
+          cache: "no-store",
+          headers: { "x-customer-phone": phone },
+        });
+        const payload = (await res.json()) as ApiEnvelope<Order>;
+        if (res.ok && payload.success) {
+          const updated = payload.data as Order;
+          if (updated.status !== order.status) {
+            setOrder(updated);
+            setStatusJustChanged(true);
+            setTimeout(() => setStatusJustChanged(false), 3000);
+          }
+        }
+      } catch {
+        // ignore polling errors silently
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [order, phone]);
 
   async function handleCancel() {
     if (!order) return;
@@ -377,7 +408,33 @@ function TrackOrderContent() {
               <CardTitle>{order.order_number}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <StatusTracker currentStatus={order.status} />
+              {statusJustChanged && (
+                <div className="rounded-md bg-green-50 border border-green-200 px-4 py-2 text-sm font-medium text-green-700 animate-pulse">
+                  Order status updated!
+                </div>
+              )}
+              {order.status === "payment_failed" ? (
+                <div className="flex flex-col items-center justify-center py-10">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </div>
+                  <p className="mt-4 text-xl font-bold text-red-600">Payment Failed!</p>
+                  <p className="mt-1 text-sm text-neutral-500">Your payment could not be verified. Please contact support.</p>
+                </div>
+              ) : order.status === "cancelled" ? (
+                <div className="flex flex-col items-center justify-center py-10">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </div>
+                  <p className="mt-4 text-xl font-bold text-red-600">Order Cancelled</p>
+                </div>
+              ) : (
+                <StatusTracker currentStatus={order.status} />
+              )}
 
               <div className="grid gap-4 sm:grid-cols-2 text-sm text-neutral-700">
                 <div>

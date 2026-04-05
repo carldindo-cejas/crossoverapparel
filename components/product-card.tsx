@@ -27,11 +27,20 @@ function StarRating({ rating }: { rating: number }) {
   );
 }
 
+function isExclusiveProduct(product: Product) {
+  return product.category_id === 5 || (product.category_name?.toLowerCase().includes("exclusive") ?? false);
+}
+
 export function ProductCard({ product }: ProductCardProps) {
+  const isExclusive = isExclusiveProduct(product);
+  const orderHref = isExclusive
+    ? `/exclusive-order/${product.id}`
+    : `/product-order/${product.id}`;
+
   return (
     <motion.div whileHover={{ y: -4 }} transition={{ duration: 0.2 }}>
       <Card className="overflow-hidden border-neutral-200 transition-shadow hover:shadow-xl hover:shadow-neutral-200/70">
-        <Link href={`/product-order/${product.id}` as any}>
+        <Link href={orderHref as any}>
           <div className="relative aspect-[4/5] bg-neutral-100">
             {product.image_url ? (
               <Image
@@ -59,7 +68,7 @@ export function ProductCard({ product }: ProductCardProps) {
           <p className="text-base font-semibold text-neutral-900">
             {formatCurrency(product.base_price_cents, product.currency)}
           </p>
-          <Link href={`/product-order/${product.id}` as any}>
+          <Link href={orderHref as any}>
             <Button size="sm" className="w-full">Order Now</Button>
           </Link>
         </CardContent>

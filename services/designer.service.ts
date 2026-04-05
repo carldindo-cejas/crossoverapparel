@@ -3,7 +3,7 @@ import { sqlAll, sqlFirst, sqlRun } from "@/db/raw";
 import { AppError } from "@/lib/errors";
 import { publishRealtimeEvent } from "@/services/realtime-publisher.service";
 
-/** List active orders assigned to a specific designer (excludes cancelled / refunded). */
+/** List active orders assigned to a specific designer (excludes cancelled / payment_failed). */
 export async function listActiveOrders(env: WorkerEnv, designerUserId: string) {
   const db = getDb(env);
 
@@ -23,7 +23,7 @@ export async function listActiveOrders(env: WorkerEnv, designerUserId: string) {
      FROM orders o
      INNER JOIN customers c ON c.id = o.customer_id
      INNER JOIN designer_assignments da ON da.order_id = o.id
-     WHERE o.status NOT IN ('cancelled', 'refunded')
+     WHERE o.status NOT IN ('cancelled', 'payment_failed')
        AND da.designer_user_id = ?
      ORDER BY o.placed_at DESC`,
     [designerUserId]

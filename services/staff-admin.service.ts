@@ -30,12 +30,13 @@ export async function createDesigner(env: WorkerEnv, rawBody: unknown) {
 
   const passwordHash = await hashPassword(body.password);
   const id = crypto.randomUUID();
+  const now = new Date().toISOString();
 
   await sqlRun(
     db,
-    `INSERT INTO users (id, email, password_hash, full_name, role, is_active)
-     VALUES (?, ?, ?, ?, 'designer', 1)`,
-    [id, body.email.toLowerCase(), passwordHash, body.fullName]
+    `INSERT INTO users (id, email, password_hash, full_name, role, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'designer', 1, ?, ?)`,
+    [id, body.email.toLowerCase(), passwordHash, body.fullName, now, now]
   );
 
   return {

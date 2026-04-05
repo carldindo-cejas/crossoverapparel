@@ -56,18 +56,23 @@ export function SiteHeader() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  function productOrderHref(product: Product) {
+    const isExclusive = product.category_id === 5 || (product.category_name?.toLowerCase().includes("exclusive") ?? false);
+    return isExclusive ? `/exclusive-order/${product.id}` : `/product-order/${product.id}`;
+  }
+
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     const q = query.trim();
     if (q) {
       // If there's exactly one result, go to it
       if (searchResults.length === 1) {
-        router.push(`/product-order/${searchResults[0].id}` as any);
+        router.push(productOrderHref(searchResults[0]) as any);
         setQuery("");
         setShowResults(false);
       } else if (searchResults.length > 0) {
         // Go to first result
-        router.push(`/product-order/${searchResults[0].id}` as any);
+        router.push(productOrderHref(searchResults[0]) as any);
         setQuery("");
         setShowResults(false);
       } else {
@@ -79,8 +84,8 @@ export function SiteHeader() {
     }
   }
 
-  function pickProduct(productId: number) {
-    router.push(`/product-order/${productId}` as any);
+  function pickProduct(product: Product) {
+    router.push(productOrderHref(product) as any);
     setQuery("");
     setShowResults(false);
   }
@@ -160,7 +165,7 @@ export function SiteHeader() {
                     <button
                       key={p.id}
                       type="button"
-                      onClick={() => pickProduct(p.id)}
+                      onClick={() => pickProduct(p)}
                       className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-neutral-50"
                     >
                       {p.image_url ? (

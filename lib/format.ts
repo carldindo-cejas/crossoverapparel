@@ -9,6 +9,7 @@ export function formatCurrency(cents: number, _currency = "PHP") {
 export function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
-    timeStyle: "short"
+    timeStyle: "short",
+    timeZone: "Asia/Manila"
   }).format(new Date(value));
 }

@@ -238,7 +238,7 @@ function NotificationBell({ notifications }: { notifications: Array<{ id: string
               notifications.map((n) => (
                 <div key={n.id} className="border-b border-neutral-100 px-4 py-3 last:border-b-0">
                   <p className="text-sm text-neutral-800">{n.message}</p>
-                  <p className="mt-1 text-xs text-neutral-400">{n.time.toLocaleTimeString()}</p>
+                  <p className="mt-1 text-xs text-neutral-400">{n.time.toLocaleTimeString("en-US", { timeZone: "Asia/Manila" })}</p>
                 </div>
               ))
             )}
